@@ -1,0 +1,25 @@
+{
+    "name": "@ekddigital/ekd-cli",
+    "version": "0.1.0",
+    "description": "EKD CLI for EKD Digital deployment platform",
+    "type": "module",
+    "bin": {
+        "ekd": "./bin/ekd.js"
+    },
+    "scripts": {
+        "start": "node ./bin/ekd.js",
+        "lint": "node --check ./bin/ekd.js",
+        "test:smoke": "node ./bin/ekd.js --help"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "keywords": [
+        "ekd",
+        "cli",
+        "deployment",
+        "dns",
+        "devops"
+    ],
+    "license": "MIT"
+}
