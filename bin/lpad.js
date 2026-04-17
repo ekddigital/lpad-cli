@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/constants.ts
-var VERSION = "0.1.0";
+var VERSION = "0.1.1";
 var DEFAULT_API_URL = "https://lpad.ekddigital.com";
 var CONFIG_DIR = process.env.LPAD_CONFIG_DIR ?? (process.env.XDG_CONFIG_HOME ? `${process.env.XDG_CONFIG_HOME}/lpad` : `${process.env.HOME ?? ""}/.config/lpad`);
 var CONFIG_PATH = `${CONFIG_DIR}/config.json`;
@@ -74,7 +74,8 @@ function getToken(config) {
 
 // src/output.ts
 function isColorEnabled(isTTY) {
-  if (process.env.NO_COLOR !== void 0 && process.env.NO_COLOR !== "") return false;
+  if (process.env.NO_COLOR !== void 0 && process.env.NO_COLOR !== "")
+    return false;
   if (process.env.TERM === "dumb") return false;
   return isTTY === true;
 }
@@ -102,6 +103,7 @@ function fail(msg, code = 1) {
 
 // src/commands/login.ts
 import readline from "node:readline";
+import { Writable } from "node:stream";
 
 // src/http.ts
 function sanitize(s) {
@@ -145,7 +147,9 @@ async function requestJson(opts) {
     });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs / 1e3}s. Check your network or API URL.`);
+      throw new Error(
+        `Request timed out after ${timeoutMs / 1e3}s. Check your network or API URL.`
+      );
     }
     throw err;
   } finally {
@@ -173,21 +177,39 @@ function extractData(payload) {
 
 // src/commands/login.ts
 async function readHiddenInput(prompt) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: false
+      });
+      rl.question(prompt, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
+    });
+  }
   return new Promise((resolve) => {
+    const mutableStdout = new Writable({
+      write(chunk, encoding, callback) {
+        if (!mutableStdout.muted) {
+          process.stdout.write(chunk, encoding);
+        }
+        callback();
+      }
+    });
+    mutableStdout.muted = false;
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stdout,
+      output: mutableStdout,
       terminal: true
     });
-    const rlAny = rl;
-    const originalWrite = rlAny._writeToOutput;
-    rlAny._writeToOutput = (s) => {
-      if (rlAny.stdoutMuted) rlAny.output?.write("*");
-      else originalWrite.call(rl, s);
-    };
-    rlAny.stdoutMuted = true;
-    rl.question(prompt, (answer) => {
-      rlAny.output?.write("\n");
+    process.stdout.write(prompt);
+    mutableStdout.muted = true;
+    rl.question("", (answer) => {
+      mutableStdout.muted = false;
+      process.stdout.write("\n");
       rl.close();
       resolve(answer);
     });

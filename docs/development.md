@@ -24,12 +24,12 @@ npm install
 
 ## Common Commands
 
-| Command | What it does |
-|---|---|
-| `npm run build` | Bundle `src/index.ts` → `bin/lpad.js` via esbuild |
-| `npm run typecheck` | Type-check without emitting files (`tsc --noEmit`) |
-| `npm run dev` | Run the CLI directly from TypeScript via `tsx` (no build step) |
-| `npm run test:smoke` | Run `bin/lpad.js --help` to verify the build works |
+| Command              | What it does                                                   |
+| -------------------- | -------------------------------------------------------------- |
+| `npm run build`      | Bundle `src/index.ts` → `bin/lpad.js` via esbuild              |
+| `npm run typecheck`  | Type-check without emitting files (`tsc --noEmit`)             |
+| `npm run dev`        | Run the CLI directly from TypeScript via `tsx` (no build step) |
+| `npm run test:smoke` | Run `bin/lpad.js --help` to verify the build works             |
 
 ### Development mode (no build required)
 
@@ -97,8 +97,8 @@ export async function cmdMyCommand(
   });
 
   const data = extractData<{ result: string }>(payload);
-  console.log(data.result);   // stdout — data for piping
-  ok("Done.");                 // stderr — status message
+  console.log(data.result); // stdout — data for piping
+  ok("Done."); // stderr — status message
 }
 ```
 
@@ -150,9 +150,9 @@ The pre-built `bin/lpad.js` is committed to the repository so the one-line shell
 
 ## Environment Variables (dev overrides)
 
-| Variable | Purpose |
-|---|---|
-| `LPAD_API_URL` | Point at a local or staging API (`http://localhost:3000`) |
-| `LPAD_TOKEN` | Use a hardcoded token without running `lpad login` |
-| `LPAD_CONFIG_DIR` | Use an isolated config directory during testing |
-| `NO_COLOR=1` | Disable ANSI colors in test output |
+| Variable          | Purpose                                                   |
+| ----------------- | --------------------------------------------------------- |
+| `LPAD_API_URL`    | Point at a local or staging API (`http://localhost:3000`) |
+| `LPAD_TOKEN`      | Use a hardcoded token without running `lpad login`        |
+| `LPAD_CONFIG_DIR` | Use an isolated config directory during testing           |
+| `NO_COLOR=1`      | Disable ANSI colors in test output                        |

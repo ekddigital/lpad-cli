@@ -10,13 +10,13 @@ lpad env pull --environment production
 
 ## Documentation
 
-| Doc | Description |
-|---|---|
-| [docs/installation.md](docs/installation.md) | Install on macOS, Linux, and Windows |
-| [docs/commands.md](docs/commands.md) | Full command reference with all flags |
-| [docs/configuration.md](docs/configuration.md) | Config file, environment variables, CI usage |
-| [docs/architecture.md](docs/architecture.md) | Codebase structure and module design |
-| [docs/development.md](docs/development.md) | Local dev workflow, adding commands, release process |
+| Doc                                            | Description                                          |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| [docs/installation.md](docs/installation.md)   | Install on macOS, Linux, and Windows                 |
+| [docs/commands.md](docs/commands.md)           | Full command reference with all flags                |
+| [docs/configuration.md](docs/configuration.md) | Config file, environment variables, CI usage         |
+| [docs/architecture.md](docs/architecture.md)   | Codebase structure and module design                 |
+| [docs/development.md](docs/development.md)     | Local dev workflow, adding commands, release process |
 
 ---
 

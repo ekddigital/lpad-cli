@@ -39,6 +39,7 @@ src/
 ### `src/index.ts`
 
 The main entry point. It:
+
 1. Calls `parseArgs()` to split `process.argv` into `[command, subcommand, positionalArgs, flags]`.
 2. Calls `readConfig()` to load `~/.config/lpad/config.json`.
 3. Routes the command to the appropriate handler function.
@@ -47,6 +48,7 @@ The main entry point. It:
 ### `src/constants.ts`
 
 Single source of truth for:
+
 - `VERSION` — matches `package.json` version.
 - `DEFAULT_API_URL` — `https://lpad.ekddigital.com`.
 - `CONFIG_DIR` — resolved from `LPAD_CONFIG_DIR` → `XDG_CONFIG_HOME` → `~/.config/lpad`.
@@ -55,10 +57,13 @@ Single source of truth for:
 ### `src/args.ts`
 
 A lightweight argument parser that produces:
+
 ```typescript
 { positional: string[], flags: Record<string, string | boolean> }
 ```
+
 Supports:
+
 - Long flags: `--flag`, `--flag value`, `--flag=value`
 - Short flags: `-f` (boolean), `-f value`
 - Boolean flags (no value): `--prod`, `--follow`, `--production`
@@ -66,6 +71,7 @@ Supports:
 ### `src/config.ts`
 
 Manages `~/.config/lpad/config.json`:
+
 - `readConfig()` — reads and parses the file; returns `{}` on missing/corrupt file.
 - `writeConfig(config)` — writes atomically with mode `0o600`.
 - `getApiUrl(config)` — resolves: `LPAD_API_URL` env var → `config.apiUrl` → `DEFAULT_API_URL`.
@@ -74,6 +80,7 @@ Manages `~/.config/lpad/config.json`:
 ### `src/http.ts`
 
 The HTTP layer wrapping the native `fetch` API (Node ≥ 18):
+
 - `requestJson(opts)` — sends a JSON request with `AbortController` timeout (default 30 s), HTTPS enforcement, and `User-Agent: lpad-cli/<version>`.
 - `extractData(payload)` — unwraps `{ data: ... }` envelope or returns the payload directly.
 - `assertSecureTransport(url, hasToken)` — throws if a non-localhost HTTP URL is used with an auth token.
@@ -82,6 +89,7 @@ The HTTP layer wrapping the native `fetch` API (Node ≥ 18):
 ### `src/output.ts`
 
 All terminal output goes through this module:
+
 - `ok(msg)` — `OK: msg` in green, written to **stderr**.
 - `info(msg)` — `->: msg` in blue, written to **stderr**.
 - `warn(msg)` — `!: msg` in yellow, written to **stderr**.
@@ -93,6 +101,7 @@ Status messages go to **stderr**; data output (`console.log`) goes to **stdout**
 ### `src/project.ts`
 
 `resolveProject(config, arg?)` — returns the project slug to use for a command, in this precedence:
+
 1. Explicit argument passed on the CLI.
 2. `config.linkedProject` (set by `lpad link`).
 3. Calls `fail()` if neither is available.
@@ -100,6 +109,7 @@ Status messages go to **stderr**; data output (`console.log`) goes to **stdout**
 ### `src/commands/*`
 
 Each command is a standalone async function (e.g. `cmdDeploy(config, projectArg, flags)`). Commands:
+
 - Validate inputs with `fail()` for early exit.
 - Call `requestJson()` for API calls.
 - Print data to **stdout** with `console.log`.
@@ -123,14 +133,14 @@ bin/lpad.js   ← shebang: #!/usr/bin/env node
 
 ## Security Properties
 
-| Concern | Mitigation |
-|---|---|
-| Credentials over HTTP | `assertSecureTransport()` blocks non-localhost HTTP when a token is present |
-| Token file exposure | Config written `0o600`; only the owner can read it |
-| ANSI injection from API | `sanitize()` strips all escape sequences from API-returned strings |
-| Shell history exposure | `--env` warns users at runtime; `readHiddenInput()` masks password entry |
-| Request hangs | `AbortController` with 30-second timeout on all requests |
-| SSE stream hangs | Same `AbortController` pattern used in `streamLogs()` |
+| Concern                 | Mitigation                                                                  |
+| ----------------------- | --------------------------------------------------------------------------- |
+| Credentials over HTTP   | `assertSecureTransport()` blocks non-localhost HTTP when a token is present |
+| Token file exposure     | Config written `0o600`; only the owner can read it                          |
+| ANSI injection from API | `sanitize()` strips all escape sequences from API-returned strings          |
+| Shell history exposure  | `--env` warns users at runtime; `readHiddenInput()` masks password entry    |
+| Request hangs           | `AbortController` with 30-second timeout on all requests                    |
+| SSE stream hangs        | Same `AbortController` pattern used in `streamLogs()`                       |
 
 ---
 

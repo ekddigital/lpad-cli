@@ -2,4 +2,14 @@ node_modules/
 *.log
 .DS_Store
 
+# Prevent accidental commits of local secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
 # bin/lpad.js is committed — it is the bundled distributable fetched by install.sh

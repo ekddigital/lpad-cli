@@ -1,4 +1,5 @@
 import readline from "node:readline";
+import { Writable } from "node:stream";
 import { type Config, writeConfig, getApiUrl } from "../config";
 import { requestJson, extractData } from "../http";
 import { ok, warn, fail } from "../output";
@@ -9,25 +10,42 @@ interface LoginResponse {
 }
 
 async function readHiddenInput(prompt: string): Promise<string> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: false,
+      });
+      rl.question(prompt, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
+    });
+  }
+
   return new Promise((resolve) => {
+    const mutableStdout = new Writable({
+      write(chunk, encoding, callback) {
+        if (!mutableStdout.muted) {
+          process.stdout.write(chunk, encoding);
+        }
+        callback();
+      },
+    }) as Writable & { muted: boolean };
+    mutableStdout.muted = false;
+
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stdout,
+      output: mutableStdout,
       terminal: true,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rlAny = rl as any;
-    const originalWrite = rlAny._writeToOutput as (s: string) => void;
-
-    rlAny._writeToOutput = (s: string) => {
-      if (rlAny.stdoutMuted) rlAny.output?.write("*");
-      else originalWrite.call(rl, s);
-    };
-
-    rlAny.stdoutMuted = true;
-    rl.question(prompt, (answer) => {
-      rlAny.output?.write("\n");
+    process.stdout.write(prompt);
+    mutableStdout.muted = true;
+    rl.question("", (answer) => {
+      mutableStdout.muted = false;
+      process.stdout.write("\n");
       rl.close();
       resolve(answer);
     });
