@@ -1,6 +1,6 @@
 import { type Config, getApiUrl, getToken } from "../config";
 import { requestJson, extractData, sanitize } from "../http";
-import { fail, info, ok } from "../output";
+import { fail, info, ok, isColorEnabled } from "../output";
 import { resolveProject } from "../project";
 
 interface DeploymentSummary {
@@ -19,7 +19,7 @@ interface DeploymentSummary {
 }
 
 function statusIcon(status: string): string {
-  if (process.env.NO_COLOR === "1") return `[${status}]`;
+  if (!isColorEnabled(process.stdout.isTTY)) return `[${status}]`;
   const map: Record<string, string> = {
     SUCCESS: "\x1b[32m✓\x1b[0m",
     READY: "\x1b[32m✓\x1b[0m",
@@ -67,10 +67,10 @@ export async function cmdDeploymentsList(
     const branch = d.branch ? `  ${sanitize(d.branch)}` : "";
     const url = sanitize(d.deployUrl ?? d.url ?? "");
     const sha = d.commitSha ? `  ${sanitize(d.commitSha).slice(0, 7)}` : "";
-    const msg = d.commitMessage ? `  ${sanitize(d.commitMessage).slice(0, 60)}` : "";
-    console.log(
-      `  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`,
-    );
+    const msg = d.commitMessage
+      ? `  ${sanitize(d.commitMessage).slice(0, 60)}`
+      : "";
+    console.log(`  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`);
     if (url) console.log(`    ${url}`);
     console.log(`    id: ${sanitize(d.id)}`);
     console.log();
@@ -86,7 +86,8 @@ export async function cmdDeploymentsInspect(
   const token = getToken(config);
   if (!token) fail("Not logged in. Run `lpad login`.");
 
-  if (!deploymentId) fail("Usage: lpad deployments inspect <deploymentId> [projectSlug]");
+  if (!deploymentId)
+    fail("Usage: lpad deployments inspect <deploymentId> [projectSlug]");
 
   const projectSlug = resolveProject(config, projectArg);
 
@@ -97,11 +98,13 @@ export async function cmdDeploymentsInspect(
     token,
   });
 
-  const data = extractData<DeploymentSummary & {
-    commitUrl?: string;
-    errorLogs?: string;
-    buildLogs?: string;
-  }>(payload);
+  const data = extractData<
+    DeploymentSummary & {
+      commitUrl?: string;
+      errorLogs?: string;
+      buildLogs?: string;
+    }
+  >(payload);
 
   if (!data) fail("Deployment not found.");
 
@@ -116,11 +119,12 @@ export async function cmdDeploymentsInspect(
   if (data.buildTime)
     console.log(`  build time:  ${(data.buildTime / 1000).toFixed(1)}s`);
   if (data.commitSha)
-    console.log(`  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`);
+    console.log(
+      `  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`,
+    );
   if (data.commitAuthor)
     console.log(`  author:      ${sanitize(data.commitAuthor)}`);
-  if (data.commitUrl)
-    console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
+  if (data.commitUrl) console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
   if (data.createdAt)
     console.log(`  created:     ${new Date(data.createdAt).toLocaleString()}`);
   if (data.errorLogs) {

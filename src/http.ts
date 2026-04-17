@@ -1,3 +1,5 @@
+import { VERSION } from "./constants";
+
 interface RequestOptions {
   method: string;
   pathName: string;
@@ -52,6 +54,9 @@ export async function requestJson<T = unknown>(
   assertSecureTransport(url, Boolean(opts.token));
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    // Sent with every request so server logs can identify the CLI version.
+    // Recommended by 12-factor CLI apps §3.
+    "User-Agent": `lpad-cli/${VERSION}`,
   };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
 

@@ -3,7 +3,7 @@
 // src/constants.ts
 var VERSION = "0.1.0";
 var DEFAULT_API_URL = "https://lpad.ekddigital.com";
-var CONFIG_DIR = process.env.LPAD_CONFIG_DIR ?? `${process.env.HOME ?? ""}/.config/lpad`;
+var CONFIG_DIR = process.env.LPAD_CONFIG_DIR ?? (process.env.XDG_CONFIG_HOME ? `${process.env.XDG_CONFIG_HOME}/lpad` : `${process.env.HOME ?? ""}/.config/lpad`);
 var CONFIG_PATH = `${CONFIG_DIR}/config.json`;
 
 // src/args.ts
@@ -73,21 +73,30 @@ function getToken(config) {
 }
 
 // src/output.ts
+function isColorEnabled(isTTY) {
+  if (process.env.NO_COLOR !== void 0 && process.env.NO_COLOR !== "") return false;
+  if (process.env.TERM === "dumb") return false;
+  return isTTY === true;
+}
 function color(code, text) {
-  if (process.env.NO_COLOR === "1") return text;
+  if (!isColorEnabled(process.stderr.isTTY)) return text;
   return `\x1B[${code}m${text}\x1B[0m`;
 }
 function ok(msg) {
-  console.log(`${color("32", "OK")}: ${msg}`);
+  process.stderr.write(`${color("32", "OK")}: ${msg}
+`);
 }
 function info(msg) {
-  console.log(`${color("34", "->")}: ${msg}`);
+  process.stderr.write(`${color("34", "->")}: ${msg}
+`);
 }
 function warn(msg) {
-  console.log(`${color("33", "!")}: ${msg}`);
+  process.stderr.write(`${color("33", "!")}: ${msg}
+`);
 }
 function fail(msg, code = 1) {
-  console.error(`${color("31", "ERR")}: ${msg}`);
+  process.stderr.write(`${color("31", "ERR")}: ${msg}
+`);
   process.exit(code);
 }
 
@@ -117,7 +126,10 @@ async function requestJson(opts) {
   const url = `${opts.apiUrl.replace(/\/$/, "")}${opts.pathName}`;
   assertSecureTransport(url, Boolean(opts.token));
   const headers = {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    // Sent with every request so server logs can identify the CLI version.
+    // Recommended by 12-factor CLI apps §3.
+    "User-Agent": `lpad-cli/${VERSION}`
   };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
   const timeoutMs = opts.timeoutMs ?? 3e4;
@@ -471,7 +483,7 @@ function cmdUpdate() {
 
 // src/commands/logs.ts
 function levelColor(level, msg) {
-  if (process.env.NO_COLOR === "1") return msg;
+  if (!isColorEnabled(process.stdout.isTTY)) return msg;
   const codes = {
     error: "\x1B[31m",
     warn: "\x1B[33m",
@@ -511,7 +523,8 @@ async function streamLogs(logsUrl, token) {
     res = await fetch(logsUrl, {
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: "text/event-stream"
+        Accept: "text/event-stream",
+        "User-Agent": `lpad-cli/${VERSION}`
       },
       signal: controller.signal
     });
@@ -598,7 +611,9 @@ async function cmdLogs(config, args, flags) {
   const logsBase = `/api/projects/${encodeURIComponent(projectSlug)}/deployments/${encodeURIComponent(deploymentId)}/logs`;
   const follow = flags.follow || flags.f;
   if (follow) {
-    info(`Streaming logs for deployment ${deploymentId} \u2014 press Ctrl+C to stop`);
+    info(
+      `Streaming logs for deployment ${deploymentId} \u2014 press Ctrl+C to stop`
+    );
     console.log();
     await streamLogs(`${apiUrl}${logsBase}`, token);
     ok("Stream ended.");
@@ -624,7 +639,7 @@ async function cmdLogs(config, args, flags) {
 
 // src/commands/deployments.ts
 function statusIcon(status) {
-  if (process.env.NO_COLOR === "1") return `[${status}]`;
+  if (!isColorEnabled(process.stdout.isTTY)) return `[${status}]`;
   const map = {
     SUCCESS: "\x1B[32m\u2713\x1B[0m",
     READY: "\x1B[32m\u2713\x1B[0m",
@@ -663,9 +678,7 @@ async function cmdDeploymentsList(config, projectArg, flags) {
     const url = sanitize(d.deployUrl ?? d.url ?? "");
     const sha = d.commitSha ? `  ${sanitize(d.commitSha).slice(0, 7)}` : "";
     const msg = d.commitMessage ? `  ${sanitize(d.commitMessage).slice(0, 60)}` : "";
-    console.log(
-      `  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`
-    );
+    console.log(`  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`);
     if (url) console.log(`    ${url}`);
     console.log(`    id: ${sanitize(d.id)}`);
     console.log();
@@ -675,7 +688,8 @@ async function cmdDeploymentsInspect(config, deploymentId, projectArg) {
   const apiUrl = getApiUrl(config);
   const token = getToken(config);
   if (!token) fail("Not logged in. Run `lpad login`.");
-  if (!deploymentId) fail("Usage: lpad deployments inspect <deploymentId> [projectSlug]");
+  if (!deploymentId)
+    fail("Usage: lpad deployments inspect <deploymentId> [projectSlug]");
   const projectSlug = resolveProject(config, projectArg);
   const payload = await requestJson({
     method: "GET",
@@ -696,11 +710,12 @@ async function cmdDeploymentsInspect(config, deploymentId, projectArg) {
   if (data.buildTime)
     console.log(`  build time:  ${(data.buildTime / 1e3).toFixed(1)}s`);
   if (data.commitSha)
-    console.log(`  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`);
+    console.log(
+      `  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`
+    );
   if (data.commitAuthor)
     console.log(`  author:      ${sanitize(data.commitAuthor)}`);
-  if (data.commitUrl)
-    console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
+  if (data.commitUrl) console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
   if (data.createdAt)
     console.log(`  created:     ${new Date(data.createdAt).toLocaleString()}`);
   if (data.errorLogs) {

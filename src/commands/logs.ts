@@ -1,7 +1,13 @@
 import { type Config, getApiUrl, getToken } from "../config";
-import { requestJson, extractData, assertSecureTransport, sanitize } from "../http";
-import { fail, info, ok } from "../output";
+import {
+  requestJson,
+  extractData,
+  assertSecureTransport,
+  sanitize,
+} from "../http";
+import { fail, info, ok, isColorEnabled } from "../output";
 import { resolveProject } from "../project";
+import { VERSION } from "../constants";
 
 interface BuildLog {
   id: string;
@@ -24,7 +30,7 @@ interface LogsSnapshot {
 
 /** ANSI colour per log level */
 function levelColor(level: string, msg: string): string {
-  if (process.env.NO_COLOR === "1") return msg;
+  if (!isColorEnabled(process.stdout.isTTY)) return msg;
   const codes: Record<string, string> = {
     error: "\x1b[31m",
     warn: "\x1b[33m",
@@ -74,10 +80,7 @@ async function resolveDeploymentId(
  * Security: assertSecureTransport is called before the fetch so credentials
  * are never sent over plain HTTP — the same guarantee as requestJson().
  */
-async function streamLogs(
-  logsUrl: string,
-  token: string,
-): Promise<void> {
+async function streamLogs(logsUrl: string, token: string): Promise<void> {
   // Fix: assert HTTPS before sending the Bearer token (requestJson does this
   // automatically, but this path uses fetch directly).
   assertSecureTransport(logsUrl, true);
@@ -94,6 +97,7 @@ async function streamLogs(
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "text/event-stream",
+        "User-Agent": `lpad-cli/${VERSION}`,
       },
       signal: controller.signal,
     });
@@ -117,7 +121,10 @@ async function streamLogs(
     fail(`Logs stream error: ${sanitize(msg)}`);
   }
 
-  if (!res.body) { clearTimeout(timer); fail("No response body from logs stream."); }
+  if (!res.body) {
+    clearTimeout(timer);
+    fail("No response body from logs stream.");
+  }
 
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -149,15 +156,24 @@ async function streamLogs(
         if (event === "log") {
           try {
             printLog(JSON.parse(dataStr) as BuildLog);
-          } catch { /* skip malformed */ }
+          } catch {
+            /* skip malformed */
+          }
         }
 
         if (event === "status") {
           try {
-            const s = JSON.parse(dataStr) as { status?: string; buildTime?: number };
-            const bt = s.buildTime ? ` (${(s.buildTime / 1000).toFixed(1)}s)` : "";
+            const s = JSON.parse(dataStr) as {
+              status?: string;
+              buildTime?: number;
+            };
+            const bt = s.buildTime
+              ? ` (${(s.buildTime / 1000).toFixed(1)}s)`
+              : "";
             info(`Status: ${sanitize(s.status ?? "unknown")}${bt}`);
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
     }
@@ -194,7 +210,9 @@ export async function cmdLogs(
   const follow = flags.follow || flags.f;
 
   if (follow) {
-    info(`Streaming logs for deployment ${deploymentId} — press Ctrl+C to stop`);
+    info(
+      `Streaming logs for deployment ${deploymentId} — press Ctrl+C to stop`,
+    );
     console.log();
     await streamLogs(`${apiUrl}${logsBase}`, token);
     ok("Stream ended.");
