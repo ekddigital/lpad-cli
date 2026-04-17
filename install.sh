@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# ekd CLI installer
+# lpad — EKD Digital Launchpad CLI installer
 # One-line install:
 #   curl -fsSL https://raw.githubusercontent.com/ekddigital/ekd-cli/main/install.sh | bash
 
 set -uo pipefail
 
-EKD_CLI_REPO="${EKD_CLI_REPO:-ekddigital/ekd-cli}"
+EKD_CLI_REPO="${LPAD_CLI_REPO:-ekddigital/ekd-cli}"
 EKD_RAW_BASE="https://raw.githubusercontent.com/${EKD_CLI_REPO}/main"
-EKD_INSTALL_DIR="${EKD_INSTALL_DIR:-$HOME/.local/bin}"
-EKD_NO_SHELL_HOOK="${EKD_NO_SHELL_HOOK:-0}"
+EKD_INSTALL_DIR="${LPAD_INSTALL_DIR:-$HOME/.local/bin}"
+EKD_NO_SHELL_HOOK="${LPAD_NO_SHELL_HOOK:-0}"
 
 if command -v curl >/dev/null 2>&1; then
   fetch_file() { curl -fsSL "$1" -o "$2"; }
@@ -38,19 +38,19 @@ in_file() {
 
 echo
 
-echo "Installing ekd CLI..."
+echo "Installing lpad (EKD Digital Launchpad CLI)..."
 mkdir -p "$EKD_INSTALL_DIR"
 
 TMP_BIN=$(mktemp)
-fetch_file "${EKD_RAW_BASE}/bin/ekd.js" "$TMP_BIN" || {
+fetch_file "${EKD_RAW_BASE}/bin/lpad.js" "$TMP_BIN" || {
   rm -f "$TMP_BIN"
-  echo "ERROR: failed to download ekd binary." >&2
+  echo "ERROR: failed to download lpad binary." >&2
   exit 1
 }
 
 chmod +x "$TMP_BIN"
-mv "$TMP_BIN" "${EKD_INSTALL_DIR}/ekd"
-echo "OK: installed ${EKD_INSTALL_DIR}/ekd"
+mv "$TMP_BIN" "${EKD_INSTALL_DIR}/lpad"
+echo "OK: installed ${EKD_INSTALL_DIR}/lpad"
 
 if [[ "$EKD_NO_SHELL_HOOK" != "1" ]]; then
   RC_FILE=$(get_rc_file)
@@ -59,7 +59,7 @@ if [[ "$EKD_NO_SHELL_HOOK" != "1" ]]; then
   if ! in_file "$EKD_INSTALL_DIR" "$RC_FILE"; then
     {
       echo ""
-      echo "# ekd CLI"
+      echo "# lpad — EKD Digital Launchpad CLI"
       echo "$PATH_LINE"
     } >> "$RC_FILE"
     echo "OK: added PATH entry to $RC_FILE"

@@ -1,62 +1,78 @@
-# ekd CLI
+# lpad — EKD Digital Launchpad CLI
 
-REST-first command line client for EKD Digital platform.
+Command-line interface for the **EKD Digital Launchpad** deployment platform.
 
-## Install (global)
+## Install (one-line)
 
 ```bash
-npm install -g @ekddigital/ekd-cli
+curl -fsSL https://raw.githubusercontent.com/ekddigital/ekd-cli/main/install.sh | bash
 ```
 
-Or from local source during development:
+Or globally via npm:
+
+```bash
+npm install -g @ekddigital/lpad
+```
+
+Or link from source during development:
 
 ```bash
 cd custom/ekd-cli
+npm install
+npm run build
 npm link
 ```
 
 ## Configure API URL
 
 ```bash
-ekd config set api https://dns.ekddigital.com
-ekd config get api
+lpad config set api https://lpad.ekddigital.com
+lpad config get api
 ```
 
-You can also set `EKD_API_URL` for one-off runs.
+You can also set `LPAD_API_URL` for one-off overrides.
 
 ## Auth
 
 ```bash
-ekd login --email you@example.com --password 'your-password'
-ekd whoami
-ekd logout
+lpad login --email you@example.com --password 'your-password'
+lpad whoami
+lpad logout
 ```
 
-Token auth is also supported:
+Token auth:
 
 ```bash
-ekd login --token <jwt>
+lpad login --token <jwt>
 ```
 
 ## Projects and Deploy
 
 ```bash
-ekd projects list
-ekd link my-project-slug
-ekd deploy --branch main --region us-east-1
+lpad projects list
+lpad link my-project-slug
+lpad deploy --branch main --region us-east-1
 ```
 
 Or deploy by explicit project:
 
 ```bash
-ekd deploy my-project-slug --custom-domain app.example.com
+lpad deploy my-project-slug --custom-domain app.example.com
 ```
 
 ## Environment Variables
 
 ```bash
-ekd env pull my-project-slug --environment production --output .env.production
-ekd env set my-project-slug API_URL https://api.example.com --environment production --secret
+lpad env pull my-project-slug --environment production --output .env.production
+lpad env set  my-project-slug API_URL https://api.example.com --environment production --secret
+```
+
+## Development
+
+```bash
+npm run build      # compile TypeScript → bin/lpad.js via esbuild
+npm run typecheck  # tsc --noEmit (no output means clean)
+npm run dev        # run src/index.ts directly via tsx (no build needed)
 ```
 
 ## Command Summary

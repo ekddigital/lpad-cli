@@ -1,2 +1,5 @@
 node_modules/
 *.log
+.DS_Store
+
+# bin/lpad.js is committed — it is the bundled distributable fetched by install.sh

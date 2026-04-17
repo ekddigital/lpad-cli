@@ -1,25 +1,33 @@
 {
-    "name": "@ekddigital/ekd-cli",
+    "name": "@ekddigital/lpad",
     "version": "0.1.0",
-    "description": "EKD CLI for EKD Digital deployment platform",
+    "description": "EKD Digital Launchpad CLI",
     "type": "module",
     "bin": {
-        "ekd": "./bin/ekd.js"
+        "lpad": "./bin/lpad.js"
     },
     "scripts": {
-        "start": "node ./bin/ekd.js",
-        "lint": "node --check ./bin/ekd.js",
-        "test:smoke": "node ./bin/ekd.js --help"
+        "build": "node build.mjs",
+        "typecheck": "tsc --noEmit",
+        "dev": "tsx src/index.ts",
+        "test:smoke": "node ./bin/lpad.js --help"
     },
     "engines": {
         "node": ">=20.0.0"
     },
     "keywords": [
         "ekd",
+        "lpad",
+        "launchpad",
         "cli",
         "deployment",
-        "dns",
         "devops"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "esbuild": "^0.25.0",
+        "tsx": "^4.0.0",
+        "typescript": "^5.0.0"
+    }
 }
