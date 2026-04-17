@@ -5,7 +5,7 @@
 
 set -uo pipefail
 
-EKD_CLI_REPO="${LPAD_CLI_REPO:-ekddigital/ekd-cli}"
+EKD_CLI_REPO="${LPAD_CLI_REPO:-ekddigital/lpad-cli}"
 EKD_RAW_BASE="https://raw.githubusercontent.com/${EKD_CLI_REPO}/main"
 EKD_INSTALL_DIR="${LPAD_INSTALL_DIR:-$HOME/.local/bin}"
 EKD_NO_SHELL_HOOK="${LPAD_NO_SHELL_HOOK:-0}"

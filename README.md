@@ -2,89 +2,100 @@
 
 Command-line interface for the **EKD Digital Launchpad** deployment platform.
 
-## Install (one-line)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ekddigital/ekd-cli/main/install.sh | bash
+```
+lpad deploy --prod --branch main
+lpad logs --follow
+lpad env pull --environment production
 ```
 
-Or globally via npm:
+## Documentation
+
+| Doc | Description |
+|---|---|
+| [docs/installation.md](docs/installation.md) | Install on macOS, Linux, and Windows |
+| [docs/commands.md](docs/commands.md) | Full command reference with all flags |
+| [docs/configuration.md](docs/configuration.md) | Config file, environment variables, CI usage |
+| [docs/architecture.md](docs/architecture.md) | Codebase structure and module design |
+| [docs/development.md](docs/development.md) | Local dev workflow, adding commands, release process |
+
+---
+
+## Quick Start
+
+### Install
+
+**macOS / Linux** — one-line script (no npm required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ekddigital/lpad-cli/main/install.sh | bash
+```
+
+**Windows** — PowerShell (no admin required):
+
+```powershell
+irm https://raw.githubusercontent.com/ekddigital/lpad-cli/main/install.ps1 | iex
+```
+
+**Any OS** — via npm:
 
 ```bash
 npm install -g @ekddigital/lpad
 ```
 
-Or link from source during development:
+Requires **Node.js ≥ 20**. See [docs/installation.md](docs/installation.md) for all options.
 
-```bash
-cd custom/ekd-cli
-npm install
-npm run build
-npm link
-```
-
-## Configure API URL
-
-```bash
-lpad config set api https://lpad.ekddigital.com
-lpad config get api
-```
-
-You can also set `LPAD_API_URL` for one-off overrides.
-
-## Auth
+### Authenticate
 
 ```bash
 lpad login --email you@example.com --password 'your-password'
-lpad whoami
-lpad logout
-```
-
-Token auth:
-
-```bash
+# or with a token (CI-friendly):
 lpad login --token <jwt>
 ```
 
-## Projects and Deploy
+### Link a project
 
 ```bash
 lpad projects list
 lpad link my-project-slug
-lpad deploy --branch main --region us-east-1
 ```
 
-Or deploy by explicit project:
+### Deploy
 
 ```bash
-lpad deploy my-project-slug --custom-domain app.example.com
+lpad deploy
+lpad deploy --prod --branch main
 ```
 
-## Environment Variables
+### View logs
 
 ```bash
-lpad env pull my-project-slug --environment production --output .env.production
-lpad env set  my-project-slug API_URL https://api.example.com --environment production --secret
+lpad logs --follow
 ```
+
+### Pull environment variables
+
+```bash
+lpad env pull --environment production --output .env.production
+```
+
+---
+
+## Requirements
+
+- Node.js ≥ 20
+- HTTPS access to `https://lpad.ekddigital.com` (or your configured API URL)
+
+---
 
 ## Development
 
 ```bash
-npm run build      # compile TypeScript → bin/lpad.js via esbuild
-npm run typecheck  # tsc --noEmit (no output means clean)
-npm run dev        # run src/index.ts directly via tsx (no build needed)
+git clone https://github.com/ekddigital/lpad-cli.git
+cd lpad-cli
+npm install
+npm run build       # → bin/lpad.js
+npm run typecheck   # tsc --noEmit
+npm run dev -- --help   # run without building
 ```
 
-## Command Summary
-
-- `ekd login`
-- `ekd whoami`
-- `ekd logout`
-- `ekd config get api`
-- `ekd config set api <url>`
-- `ekd projects list`
-- `ekd link <projectSlug>`
-- `ekd unlink`
-- `ekd deploy [projectSlug] [flags]`
-- `ekd env pull [projectSlug] [flags]`
-- `ekd env set [projectSlug] <KEY> <VALUE> [flags]`
+See [docs/development.md](docs/development.md) for the full workflow.

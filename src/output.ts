@@ -11,7 +11,8 @@
  * for data output printed with console.log().
  */
 export function isColorEnabled(isTTY: boolean | undefined): boolean {
-  if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== "") return false;
+  if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== "")
+    return false;
   if (process.env.TERM === "dumb") return false;
   return isTTY === true;
 }

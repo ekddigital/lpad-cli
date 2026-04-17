@@ -18,10 +18,13 @@ interface RequestOptions {
 export function sanitize(s: string): string {
   // Remove CSI / OSC / ESC sequences
   // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, "")
-          // Remove any remaining raw control chars except \t and \n
-          // eslint-disable-next-line no-control-regex
-          .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+  return (
+    s
+      .replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, "")
+      // Remove any remaining raw control chars except \t and \n
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+  );
 }
 
 /**
@@ -76,7 +79,9 @@ export async function requestJson<T = unknown>(
     });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs / 1000}s. Check your network or API URL.`);
+      throw new Error(
+        `Request timed out after ${timeoutMs / 1000}s. Check your network or API URL.`,
+      );
     }
     throw err;
   } finally {

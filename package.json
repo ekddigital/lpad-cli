@@ -24,6 +24,10 @@
         "devops"
     ],
     "license": "MIT",
+    "files": [
+        "bin/",
+        "README.md"
+    ],
     "devDependencies": {
         "@types/node": "^20.0.0",
         "esbuild": "^0.25.0",
