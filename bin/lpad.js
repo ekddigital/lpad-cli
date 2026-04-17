@@ -95,6 +95,9 @@ function fail(msg, code = 1) {
 import readline from "node:readline";
 
 // src/http.ts
+function sanitize(s) {
+  return s.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
 function assertSecureTransport(url, hasToken) {
   if (!hasToken) return;
   let parsed;
@@ -117,11 +120,25 @@ async function requestJson(opts) {
     "Content-Type": "application/json"
   };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
-  const res = await fetch(url, {
-    method: opts.method,
-    headers,
-    body: opts.body !== void 0 ? JSON.stringify(opts.body) : void 0
-  });
+  const timeoutMs = opts.timeoutMs ?? 3e4;
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: opts.method,
+      headers,
+      body: opts.body !== void 0 ? JSON.stringify(opts.body) : void 0,
+      signal: controller?.signal
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs / 1e3}s. Check your network or API URL.`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   const text = await res.text();
   let data;
   try {
@@ -279,6 +296,9 @@ async function cmdDeploy(config, projectArg, flags) {
   if (flags["custom-domain"])
     body.customDomain = String(flags["custom-domain"]);
   if (flags.env) {
+    warn(
+      "--env values (including secrets) are visible in shell history. Use `lpad env set` for persistent secrets instead."
+    );
     const envEntries = Array.isArray(flags.env) ? flags.env : [flags.env];
     const environmentVariables = {};
     for (const entry of envEntries) {
@@ -464,7 +484,7 @@ function levelColor(level, msg) {
 function printLog(log) {
   const ts = new Date(log.timestamp).toLocaleTimeString();
   const lvl = log.level.toUpperCase().padEnd(5);
-  console.log(levelColor(log.level, `${ts}  ${lvl}  ${log.message}`));
+  console.log(levelColor(log.level, `${ts}  ${lvl}  ${sanitize(log.message)}`));
 }
 async function resolveDeploymentId(projectSlug, deploymentArg, apiUrl, token) {
   if (deploymentArg) return deploymentArg;
@@ -482,13 +502,28 @@ async function resolveDeploymentId(projectSlug, deploymentArg, apiUrl, token) {
   return latest.id;
 }
 async function streamLogs(logsUrl, token) {
-  const res = await fetch(logsUrl, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "text/event-stream"
+  assertSecureTransport(logsUrl, true);
+  const STREAM_TIMEOUT_MS = 22 * 60 * 1e3;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(logsUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "text/event-stream"
+      },
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Log stream timed out after 22 minutes.");
     }
-  });
+    throw err;
+  }
   if (!res.ok) {
+    clearTimeout(timer);
     const text = await res.text();
     let msg;
     try {
@@ -496,45 +531,52 @@ async function streamLogs(logsUrl, token) {
     } catch {
       msg = text;
     }
-    fail(`Logs stream error: ${msg}`);
+    fail(`Logs stream error: ${sanitize(msg)}`);
   }
-  if (!res.body) fail("No response body from logs stream.");
+  if (!res.body) {
+    clearTimeout(timer);
+    fail("No response body from logs stream.");
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() ?? "";
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      const lines = block.split("\n");
-      let event = "message";
-      let dataStr = "";
-      for (const line of lines) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) dataStr = line.slice(5).trim();
-      }
-      if (event === "done") {
-        return;
-      }
-      if (event === "log") {
-        try {
-          printLog(JSON.parse(dataStr));
-        } catch {
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        const lines = block.split("\n");
+        let event = "message";
+        let dataStr = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataStr = line.slice(5).trim();
         }
-      }
-      if (event === "status") {
-        try {
-          const s = JSON.parse(dataStr);
-          const bt = s.buildTime ? ` (${(s.buildTime / 1e3).toFixed(1)}s)` : "";
-          info(`Status: ${s.status ?? "unknown"}${bt}`);
-        } catch {
+        if (event === "done") {
+          return;
+        }
+        if (event === "log") {
+          try {
+            printLog(JSON.parse(dataStr));
+          } catch {
+          }
+        }
+        if (event === "status") {
+          try {
+            const s = JSON.parse(dataStr);
+            const bt = s.buildTime ? ` (${(s.buildTime / 1e3).toFixed(1)}s)` : "";
+            info(`Status: ${sanitize(s.status ?? "unknown")}${bt}`);
+          } catch {
+          }
         }
       }
     }
+  } finally {
+    clearTimeout(timer);
   }
 }
 async function cmdLogs(config, args, flags) {
@@ -617,15 +659,15 @@ async function cmdDeploymentsList(config, projectArg, flags) {
   for (const d of deployments) {
     const bt = d.buildTime ? `  ${(d.buildTime / 1e3).toFixed(1)}s` : "";
     const prod = d.isProduction ? "  [prod]" : "";
-    const branch = d.branch ? `  ${d.branch}` : "";
-    const url = d.deployUrl ?? d.url ?? "";
-    const sha = d.commitSha ? `  ${d.commitSha.slice(0, 7)}` : "";
-    const msg = d.commitMessage ? `  ${d.commitMessage.slice(0, 60)}` : "";
+    const branch = d.branch ? `  ${sanitize(d.branch)}` : "";
+    const url = sanitize(d.deployUrl ?? d.url ?? "");
+    const sha = d.commitSha ? `  ${sanitize(d.commitSha).slice(0, 7)}` : "";
+    const msg = d.commitMessage ? `  ${sanitize(d.commitMessage).slice(0, 60)}` : "";
     console.log(
       `  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`
     );
     if (url) console.log(`    ${url}`);
-    console.log(`    id: ${d.id}`);
+    console.log(`    id: ${sanitize(d.id)}`);
     console.log();
   }
 }
@@ -644,27 +686,27 @@ async function cmdDeploymentsInspect(config, deploymentId, projectArg) {
   const data = extractData(payload);
   if (!data) fail("Deployment not found.");
   console.log();
-  console.log(`  id:          ${data.id}`);
+  console.log(`  id:          ${sanitize(data.id)}`);
   console.log(`  status:      ${statusIcon(data.status ?? "")}`);
   console.log(`  production:  ${data.isProduction ? "yes" : "no"}`);
-  console.log(`  branch:      ${data.branch ?? ""}`);
-  console.log(`  environment: ${data.environment ?? ""}`);
+  console.log(`  branch:      ${sanitize(data.branch ?? "")}`);
+  console.log(`  environment: ${sanitize(data.environment ?? "")}`);
   if (data.deployUrl ?? data.url)
-    console.log(`  url:         ${data.deployUrl ?? data.url}`);
+    console.log(`  url:         ${sanitize(data.deployUrl ?? data.url ?? "")}`);
   if (data.buildTime)
     console.log(`  build time:  ${(data.buildTime / 1e3).toFixed(1)}s`);
   if (data.commitSha)
-    console.log(`  commit:      ${data.commitSha.slice(0, 7)}  ${data.commitMessage ?? ""}`);
+    console.log(`  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`);
   if (data.commitAuthor)
-    console.log(`  author:      ${data.commitAuthor}`);
+    console.log(`  author:      ${sanitize(data.commitAuthor)}`);
   if (data.commitUrl)
-    console.log(`  commit url:  ${data.commitUrl}`);
+    console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
   if (data.createdAt)
     console.log(`  created:     ${new Date(data.createdAt).toLocaleString()}`);
   if (data.errorLogs) {
     console.log();
     console.log("  error:");
-    for (const line of data.errorLogs.split("\n").slice(0, 20))
+    for (const line of sanitize(data.errorLogs).split("\n").slice(0, 20))
       console.log(`    ${line}`);
   }
   console.log();

@@ -1,6 +1,6 @@
 import { type Config, getApiUrl, getToken } from "../config";
 import { requestJson, extractData } from "../http";
-import { ok, info, fail } from "../output";
+import { ok, info, warn, fail } from "../output";
 import { resolveProject } from "../project";
 
 interface DeploymentResponse {
@@ -35,6 +35,10 @@ export async function cmdDeploy(
 
   // --env KEY=VALUE (multiple allowed — args parser stores as string or string[])
   if (flags.env) {
+    warn(
+      "--env values (including secrets) are visible in shell history. " +
+        "Use `lpad env set` for persistent secrets instead.",
+    );
     const envEntries = Array.isArray(flags.env) ? flags.env : [flags.env];
     const environmentVariables: Record<string, string> = {};
     for (const entry of envEntries as string[]) {

@@ -4,13 +4,29 @@ interface RequestOptions {
   apiUrl: string;
   token?: string;
   body?: unknown;
+  /** Request timeout in ms. Defaults to 30 000. Pass 0 to disable. */
+  timeoutMs?: number;
+}
+
+/**
+ * Strip ANSI escape sequences and other non-printable control characters
+ * from a string returned by the API before printing to the terminal.
+ * Preserves tab (\t) and newline (\n).
+ */
+export function sanitize(s: string): string {
+  // Remove CSI / OSC / ESC sequences
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, "")
+          // Remove any remaining raw control chars except \t and \n
+          // eslint-disable-next-line no-control-regex
+          .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
 }
 
 /**
  * Reject plain-HTTP URLs when an Authorization header will be sent.
  * Localhost is exempted to support local development.
  */
-function assertSecureTransport(url: string, hasToken: boolean): void {
+export function assertSecureTransport(url: string, hasToken: boolean): void {
   if (!hasToken) return;
   let parsed: URL;
   try {
@@ -39,11 +55,28 @@ export async function requestJson<T = unknown>(
   };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
 
-  const res = await fetch(url, {
-    method: opts.method,
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: opts.method,
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s. Check your network or API URL.`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   const text = await res.text();
   let data: unknown;

@@ -1,5 +1,5 @@
 import { type Config, getApiUrl, getToken } from "../config";
-import { requestJson, extractData } from "../http";
+import { requestJson, extractData, sanitize } from "../http";
 import { fail, info, ok } from "../output";
 import { resolveProject } from "../project";
 
@@ -64,15 +64,15 @@ export async function cmdDeploymentsList(
   for (const d of deployments) {
     const bt = d.buildTime ? `  ${(d.buildTime / 1000).toFixed(1)}s` : "";
     const prod = d.isProduction ? "  [prod]" : "";
-    const branch = d.branch ? `  ${d.branch}` : "";
-    const url = d.deployUrl ?? d.url ?? "";
-    const sha = d.commitSha ? `  ${d.commitSha.slice(0, 7)}` : "";
-    const msg = d.commitMessage ? `  ${d.commitMessage.slice(0, 60)}` : "";
+    const branch = d.branch ? `  ${sanitize(d.branch)}` : "";
+    const url = sanitize(d.deployUrl ?? d.url ?? "");
+    const sha = d.commitSha ? `  ${sanitize(d.commitSha).slice(0, 7)}` : "";
+    const msg = d.commitMessage ? `  ${sanitize(d.commitMessage).slice(0, 60)}` : "";
     console.log(
       `  ${statusIcon(d.status)}${prod}${branch}${sha}${bt}${msg}`,
     );
     if (url) console.log(`    ${url}`);
-    console.log(`    id: ${d.id}`);
+    console.log(`    id: ${sanitize(d.id)}`);
     console.log();
   }
 }
@@ -106,27 +106,27 @@ export async function cmdDeploymentsInspect(
   if (!data) fail("Deployment not found.");
 
   console.log();
-  console.log(`  id:          ${data.id}`);
+  console.log(`  id:          ${sanitize(data.id)}`);
   console.log(`  status:      ${statusIcon(data.status ?? "")}`);
   console.log(`  production:  ${data.isProduction ? "yes" : "no"}`);
-  console.log(`  branch:      ${data.branch ?? ""}`);
-  console.log(`  environment: ${data.environment ?? ""}`);
+  console.log(`  branch:      ${sanitize(data.branch ?? "")}`);
+  console.log(`  environment: ${sanitize(data.environment ?? "")}`);
   if (data.deployUrl ?? data.url)
-    console.log(`  url:         ${data.deployUrl ?? data.url}`);
+    console.log(`  url:         ${sanitize(data.deployUrl ?? data.url ?? "")}`);
   if (data.buildTime)
     console.log(`  build time:  ${(data.buildTime / 1000).toFixed(1)}s`);
   if (data.commitSha)
-    console.log(`  commit:      ${data.commitSha.slice(0, 7)}  ${data.commitMessage ?? ""}`);
+    console.log(`  commit:      ${sanitize(data.commitSha).slice(0, 7)}  ${sanitize(data.commitMessage ?? "")}`);
   if (data.commitAuthor)
-    console.log(`  author:      ${data.commitAuthor}`);
+    console.log(`  author:      ${sanitize(data.commitAuthor)}`);
   if (data.commitUrl)
-    console.log(`  commit url:  ${data.commitUrl}`);
+    console.log(`  commit url:  ${sanitize(data.commitUrl)}`);
   if (data.createdAt)
     console.log(`  created:     ${new Date(data.createdAt).toLocaleString()}`);
   if (data.errorLogs) {
     console.log();
     console.log("  error:");
-    for (const line of data.errorLogs.split("\n").slice(0, 20))
+    for (const line of sanitize(data.errorLogs).split("\n").slice(0, 20))
       console.log(`    ${line}`);
   }
   console.log();
