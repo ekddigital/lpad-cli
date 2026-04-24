@@ -24,6 +24,7 @@ function helpText(): string {
     "",
     "Auth:",
     "  lpad login --email <email> --password <password>",
+    "  lpad login --github",
     "  lpad login --token <jwt>",
     "  lpad whoami",
     "  lpad logout",

@@ -104,6 +104,7 @@ function fail(msg, code = 1) {
 // src/commands/login.ts
 import readline from "node:readline";
 import { Writable } from "node:stream";
+import { spawn } from "node:child_process";
 
 // src/http.ts
 function sanitize(s) {
@@ -176,6 +177,65 @@ function extractData(payload) {
 }
 
 // src/commands/login.ts
+function openBrowser(url) {
+  const platform = process.platform;
+  if (platform === "darwin") {
+    spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+    return;
+  }
+  if (platform === "win32") {
+    spawn("cmd", ["/c", "start", "", url], {
+      stdio: "ignore",
+      detached: true
+    }).unref();
+    return;
+  }
+  spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function loginWithGitHub(config, apiUrl) {
+  const startPayload = await requestJson({
+    method: "POST",
+    pathName: "/api/auth/github/device/start",
+    apiUrl
+  });
+  const start = extractData(startPayload);
+  ok("Starting GitHub device login...");
+  process.stdout.write(
+    `Open ${start.verificationUri} and enter code: ${start.userCode}
+`
+  );
+  try {
+    openBrowser(start.verificationUri);
+  } catch {
+    warn("Could not open browser automatically. Please open the URL manually.");
+  }
+  const pollIntervalMs = Math.max(3, start.interval) * 1e3;
+  const expiresAt = Date.now() + start.expiresIn * 1e3;
+  while (Date.now() < expiresAt) {
+    const completePayload = await requestJson({
+      method: "POST",
+      pathName: "/api/auth/github/device/complete",
+      apiUrl,
+      body: { deviceCode: start.deviceCode }
+    });
+    const complete = extractData(completePayload);
+    if (complete.status === "approved" && complete.token) {
+      writeConfig({
+        ...config,
+        token: complete.token,
+        apiUrl,
+        user: complete.user ?? null
+      });
+      ok(`Logged in${complete.user?.email ? ` as ${complete.user.email}` : ""}.`);
+      return;
+    }
+    await sleep(pollIntervalMs);
+  }
+  fail("GitHub login timed out. Please run `lpad login --github` again.");
+}
 async function readHiddenInput(prompt) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return new Promise((resolve) => {
@@ -220,6 +280,10 @@ async function cmdLogin(config, flags) {
   if (flags.token) {
     writeConfig({ ...config, token: String(flags.token), apiUrl });
     ok("Token saved.");
+    return;
+  }
+  if (flags.github) {
+    await loginWithGitHub(config, apiUrl);
     return;
   }
   if (!flags.email) fail("Use --email and --password, or --token.");
@@ -791,6 +855,7 @@ function helpText() {
     "",
     "Auth:",
     "  lpad login --email <email> --password <password>",
+    "  lpad login --github",
     "  lpad login --token <jwt>",
     "  lpad whoami",
     "  lpad logout",

@@ -48,6 +48,8 @@ Requires **Node.js ≥ 20**. See [docs/installation.md](docs/installation.md) fo
 
 ```bash
 lpad login --email you@example.com --password 'your-password'
+# or via GitHub device login:
+lpad login --github
 # or with a token (CI-friendly):
 lpad login --token <jwt>
 ```
