@@ -333,23 +333,50 @@ function cmdLogout(config) {
 }
 
 // src/commands/projects.ts
+function normalizeProjects(payload) {
+  if (Array.isArray(payload)) {
+    return {
+      projects: payload,
+      hasNextPage: false,
+      page: 1,
+      totalPages: 1
+    };
+  }
+  const projects = payload.projects ?? [];
+  const page = payload.pagination?.page ?? 1;
+  const totalPages = payload.pagination?.totalPages ?? 1;
+  const hasNextPage = payload.pagination?.hasNextPage ?? page < totalPages;
+  return { projects, hasNextPage, page, totalPages };
+}
 async function cmdProjectsList(config) {
   const apiUrl = getApiUrl(config);
   const token = getToken(config);
   if (!token) fail("Not logged in. Run `lpad login`.");
-  const payload = await requestJson({
-    method: "GET",
-    pathName: "/api/projects",
-    apiUrl,
-    token
-  });
-  const data = extractData(payload);
-  const projects = Array.isArray(data) ? data : data.projects ?? [];
-  if (!projects.length) {
+  const allProjects = [];
+  let page = 1;
+  let hasNextPage = true;
+  while (hasNextPage) {
+    const payload = await requestJson({
+      method: "GET",
+      pathName: `/api/projects?page=${page}&limit=100`,
+      apiUrl,
+      token
+    });
+    const data = extractData(payload);
+    const normalized = normalizeProjects(data);
+    allProjects.push(...normalized.projects);
+    if (normalized.totalPages <= normalized.page) {
+      hasNextPage = false;
+    } else {
+      hasNextPage = normalized.hasNextPage;
+    }
+    page += 1;
+  }
+  if (!allProjects.length) {
     info("No projects found.");
     return;
   }
-  for (const p of projects) {
+  for (const p of allProjects) {
     console.log(`${p.slug ?? p.id}  ${p.name ?? ""}`);
   }
 }
