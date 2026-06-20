@@ -1,10 +1,33 @@
-import { type Config, writeConfig } from "../config";
+import { type Config, getApiUrl, getToken, writeConfig } from "../config";
+import { defaultApiUrlForManifest } from "../lpad-dir";
+import { scaffoldLpadDir } from "../scaffold";
 import { ok, fail } from "../output";
 
-export function cmdLink(config: Config, projectSlug: string | undefined): void {
+export async function cmdLink(
+  config: Config,
+  projectSlug: string | undefined,
+): Promise<void> {
   if (!projectSlug) fail("Usage: lpad link <projectSlug>");
-  writeConfig({ ...config, linkedProject: projectSlug });
+
+  const apiUrl = defaultApiUrlForManifest(getApiUrl(config));
+  const token = getToken(config);
+
+  const result = await scaffoldLpadDir({
+    config,
+    slug: projectSlug,
+    apiUrl,
+    token: token || undefined,
+    fetchFromServer: Boolean(token),
+    includeAssets: true,
+  });
+
   ok(`Linked default project: ${projectSlug}`);
+
+  if (result.created) {
+    ok(`Created ${result.manifestFile}`);
+  } else if (result.updated) {
+    ok(`Updated ${result.manifestFile}`);
+  }
 }
 
 export function cmdUnlink(config: Config): void {

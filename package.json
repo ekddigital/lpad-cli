@@ -1,6 +1,6 @@
 {
     "name": "@ekddigital/lpad",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "EKD Digital Launchpad CLI",
     "type": "module",
     "bin": {
@@ -10,6 +10,7 @@
         "build": "node build.mjs",
         "typecheck": "tsc --noEmit",
         "dev": "tsx src/index.ts",
+        "test": "npm run build && node --import tsx --test test/**/*.test.ts",
         "test:smoke": "node ./bin/lpad.js --help"
     },
     "engines": {

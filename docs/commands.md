@@ -51,6 +51,50 @@ lpad logout
 
 ## Projects
 
+### `lpad init <projectSlug>`
+
+Initialize a project directory with a `.lpad/manifest.json` and link it to Launchpad.
+
+```bash
+lpad init towanpay
+lpad init my-app --name "My App"
+lpad init my-app --force
+lpad init my-app --no-assets
+```
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Project display name in the manifest |
+| `--force` | Overwrite an existing manifest |
+| `--no-assets` | Omit default Assets CDN templates |
+
+Creates:
+
+- `.lpad/manifest.json` — slug, API URL, deploy target, assets templates, env hints
+- `.lpad/README.md` — explains the convention
+
+Also updates `linkedProject` in `~/.config/lpad/config.json`.
+
+---
+
+### `lpad migrate [projectSlug]`
+
+Scaffold or refresh `.lpad/` for an **existing** Launchpad project. Idempotent merge — safe to re-run. Also runs automatically on first `lpad deploy` when `.lpad/` is absent.
+
+```bash
+lpad migrate
+lpad migrate towanpay
+lpad migrate --force
+lpad migrate --no-assets
+```
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Overwrite manifest fields from Launchpad |
+| `--no-assets` | Omit default Assets CDN templates |
+
+---
+
 ### `lpad projects list`
 
 List all projects accessible to your account.
@@ -63,7 +107,7 @@ lpad projects list
 
 ### `lpad link <projectSlug>`
 
-Link the current working directory to a project. Saves the slug to the local config so you don't have to pass it to every command.
+Link the current working directory to a project. Saves the slug to the global config and creates or updates `.lpad/manifest.json` in the project root.
 
 ```bash
 lpad link my-project-slug
@@ -85,7 +129,9 @@ lpad unlink
 
 ### `lpad deploy [projectSlug]`
 
-Trigger a deployment. If `projectSlug` is omitted, uses the linked project.
+Trigger a deployment. If `projectSlug` is omitted, uses `.lpad/manifest.json`, then the linked project in `~/.config/lpad/config.json`.
+
+On the **first deploy** when `.lpad/` is missing, the CLI auto-creates it from the resolved project slug (and Launchpad API when logged in).
 
 ```bash
 lpad deploy

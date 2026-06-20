@@ -1,4 +1,4 @@
-export const VERSION = "0.1.1";
+export const VERSION = "0.2.0";
 export const DEFAULT_API_URL = "https://lpad.ekddigital.com";
 
 export const CONFIG_DIR =

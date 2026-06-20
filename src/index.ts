@@ -6,6 +6,8 @@ import { cmdLogin } from "./commands/login";
 import { cmdWhoami } from "./commands/whoami";
 import { cmdLogout } from "./commands/logout";
 import { cmdProjectsList } from "./commands/projects";
+import { cmdInit } from "./commands/init";
+import { cmdMigrate } from "./commands/migrate";
 import { cmdLink, cmdUnlink } from "./commands/link";
 import { cmdDeploy } from "./commands/deploy";
 import { cmdEnvPull, cmdEnvSet, cmdEnvList } from "./commands/env";
@@ -30,9 +32,14 @@ function helpText(): string {
     "  lpad logout",
     "",
     "Projects:",
+    "  lpad init <projectSlug> [--force] [--no-assets]",
+    "  lpad migrate [projectSlug] [--force] [--no-assets]  Existing projects",
     "  lpad projects list",
-    "  lpad link <projectSlug>",
+    "  lpad link <projectSlug>                       Also creates .lpad/",
     "  lpad unlink",
+    "",
+    "  .lpad/ is created automatically by init, link, migrate, and deploy.",
+    "  No manual mkdir — commit manifest.json (no secrets).",
     "",
     "Deploy:",
     "  lpad deploy [projectSlug] [--prod] [--branch main] [--region us-east-1]",
@@ -98,8 +105,14 @@ async function main(): Promise<void> {
         if (args[0] === "list") return void (await cmdProjectsList(config));
         break;
 
+      case "init":
+        return void (await cmdInit(config, args[0], flags));
+
+      case "migrate":
+        return void (await cmdMigrate(config, args[0], flags));
+
       case "link":
-        return void cmdLink(config, args[0]);
+        return void (await cmdLink(config, args[0]));
 
       case "unlink":
         return void cmdUnlink(config);

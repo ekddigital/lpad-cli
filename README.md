@@ -56,10 +56,18 @@ lpad login --token <jwt>
 
 ### Link a project
 
+`.lpad/` is created **automatically** — never run `mkdir .lpad` or hand-write `manifest.json` / `README.md`.
+
 ```bash
 lpad projects list
-lpad link my-project-slug
+lpad init my-project-slug      # register + scaffold .lpad/manifest.json
+lpad link my-project-slug      # link + create/update .lpad/
+lpad migrate                   # existing repos: scaffold from Launchpad
 ```
+
+Each linked project gets a **`.lpad/`** directory (git-trackable metadata, no secrets).
+First `lpad deploy` also bootstraps `.lpad/` when missing.
+See [docs/configuration.md](docs/configuration.md#project-directory-lpad).
 
 ### Deploy
 

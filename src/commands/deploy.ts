@@ -2,6 +2,7 @@ import { type Config, getApiUrl, getToken } from "../config";
 import { requestJson, extractData } from "../http";
 import { ok, info, warn, fail } from "../output";
 import { resolveProject } from "../project";
+import { lpadDirExists, scaffoldLpadDir } from "../scaffold";
 
 interface DeploymentResponse {
   deployment?: { deploymentId?: string; id?: string; url?: string };
@@ -20,6 +21,22 @@ export async function cmdDeploy(
   if (!token) fail("Not logged in. Run `lpad login`.");
 
   const projectSlug = resolveProject(config, projectArg);
+
+  if (!lpadDirExists()) {
+    const bootstrapped = await scaffoldLpadDir({
+      config,
+      slug: projectSlug,
+      apiUrl,
+      token,
+      fetchFromServer: true,
+      updateConfig: true,
+    });
+    if (bootstrapped.created) {
+      info(`Created ${bootstrapped.manifestFile} (auto-bootstrap on deploy)`);
+    } else if (bootstrapped.updated) {
+      info(`Updated ${bootstrapped.manifestFile} (auto-bootstrap on deploy)`);
+    }
+  }
 
   const body: Record<string, unknown> = {
     branch: String(flags.branch ?? "main"),

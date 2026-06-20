@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/constants.ts
-var VERSION = "0.1.1";
+var VERSION = "0.2.0";
 var DEFAULT_API_URL = "https://lpad.ekddigital.com";
 var CONFIG_DIR = process.env.LPAD_CONFIG_DIR ?? (process.env.XDG_CONFIG_HOME ? `${process.env.XDG_CONFIG_HOME}/lpad` : `${process.env.HOME ?? ""}/.config/lpad`);
 var CONFIG_PATH = `${CONFIG_DIR}/config.json`;
@@ -381,11 +381,806 @@ async function cmdProjectsList(config) {
   }
 }
 
+// src/lpad-dir.ts
+import fs3 from "node:fs";
+import path2 from "node:path";
+
+// src/detect.ts
+import fs2 from "node:fs";
+import path from "node:path";
+function fileExists(root, ...parts) {
+  return fs2.existsSync(path.join(root, ...parts));
+}
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs2.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function readTextFile(filePath) {
+  try {
+    return fs2.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+function packageJson(root) {
+  return readJsonFile(path.join(root, "package.json"));
+}
+function hasDep(pkg, name) {
+  if (!pkg) return false;
+  return Boolean(pkg.dependencies?.[name] || pkg.devDependencies?.[name]);
+}
+function scriptOr(pkg, script, fallback) {
+  return pkg?.scripts?.[script]?.trim() || fallback;
+}
+function detectPython(root) {
+  const hasManage = fileExists(root, "manage.py");
+  const hasPyproject = fileExists(root, "pyproject.toml");
+  const hasReqs = fileExists(root, "requirements.txt");
+  if (!hasManage && !hasPyproject && !hasReqs) return null;
+  let framework = "Python";
+  let startCommand = "python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT";
+  if (hasManage) {
+    framework = "Django";
+    startCommand = "python3 manage.py runserver 0.0.0.0:$PORT";
+  } else if (hasPyproject) {
+    const toml = readTextFile(path.join(root, "pyproject.toml")) ?? "";
+    if (/fastapi/i.test(toml)) {
+      framework = "FastAPI";
+      startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT";
+    } else if (/flask/i.test(toml)) {
+      framework = "Flask";
+      startCommand = "python3 -m flask run --host=0.0.0.0 --port=$PORT";
+    }
+  } else if (hasReqs) {
+    const reqs = readTextFile(path.join(root, "requirements.txt")) ?? "";
+    if (/^fastapi/im.test(reqs)) {
+      framework = "FastAPI";
+      startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT";
+    } else if (/^flask/im.test(reqs)) {
+      framework = "Flask";
+      startCommand = "python3 -m flask run --host=0.0.0.0 --port=$PORT";
+    } else if (/^django/im.test(reqs)) {
+      framework = "Django";
+      startCommand = "python3 manage.py runserver 0.0.0.0:$PORT";
+    }
+  }
+  return {
+    type: "python",
+    framework,
+    deployMode: "process",
+    runtime: "python",
+    buildCommand: "",
+    startCommand,
+    outputDirectory: ".",
+    hasPrisma: false,
+    hasNextAuth: false
+  };
+}
+function detectGo(root) {
+  if (!fileExists(root, "go.mod")) return null;
+  return {
+    type: "go",
+    framework: "Go",
+    deployMode: "process",
+    runtime: "go",
+    buildCommand: "go build -o bin/app .",
+    startCommand: "./bin/app",
+    outputDirectory: "bin",
+    hasPrisma: false,
+    hasNextAuth: false
+  };
+}
+function detectRust(root) {
+  if (!fileExists(root, "Cargo.toml")) return null;
+  return {
+    type: "rust",
+    framework: "Rust",
+    deployMode: "process",
+    runtime: "rust",
+    buildCommand: "cargo build --release",
+    startCommand: "./target/release/app",
+    outputDirectory: "target/release",
+    hasPrisma: false,
+    hasNextAuth: false
+  };
+}
+function detectDocker(root) {
+  const hasDockerfile = fileExists(root, "Dockerfile");
+  const hasCompose = fileExists(root, "docker-compose.yml") || fileExists(root, "docker-compose.yaml") || fileExists(root, "compose.yml") || fileExists(root, "compose.yaml");
+  if (!hasDockerfile && !hasCompose) return null;
+  return {
+    type: "docker",
+    framework: hasDockerfile ? "Docker" : "Docker Compose",
+    deployMode: "docker",
+    buildCommand: hasDockerfile ? "docker build -t app ." : void 0,
+    startCommand: hasCompose ? "docker compose up -d" : "docker run app",
+    hasPrisma: false,
+    hasNextAuth: false
+  };
+}
+function detectNode(root, pkg) {
+  if (hasDep(pkg, "next")) {
+    const hasPrisma = hasDep(pkg, "@prisma/client") || hasDep(pkg, "prisma") || fileExists(root, "prisma", "schema.prisma");
+    const hasNextAuth = hasDep(pkg, "next-auth");
+    return {
+      type: "nextjs",
+      framework: "Next.js",
+      deployMode: "pm2",
+      runtime: "node",
+      buildCommand: scriptOr(pkg, "build", "npm run build"),
+      startCommand: scriptOr(pkg, "start", "npm start"),
+      outputDirectory: ".next",
+      hasPrisma,
+      hasNextAuth
+    };
+  }
+  if (hasDep(pkg, "vite") || hasDep(pkg, "react-scripts")) {
+    const isCra = hasDep(pkg, "react-scripts");
+    return {
+      type: "static",
+      framework: isCra ? "Create React App" : "Vite",
+      deployMode: "static",
+      runtime: "node",
+      buildCommand: scriptOr(pkg, "build", "npm run build"),
+      outputDirectory: isCra ? "build" : "dist",
+      hasPrisma: false,
+      hasNextAuth: false
+    };
+  }
+  if (hasDep(pkg, "express") || hasDep(pkg, "fastify") || hasDep(pkg, "@nestjs/core")) {
+    let framework = "Node.js";
+    if (hasDep(pkg, "express")) framework = "Express";
+    else if (hasDep(pkg, "fastify")) framework = "Fastify";
+    else if (hasDep(pkg, "@nestjs/core")) framework = "NestJS";
+    return {
+      type: "node",
+      framework,
+      deployMode: "pm2",
+      runtime: "node",
+      buildCommand: scriptOr(pkg, "build", "npm run build"),
+      startCommand: scriptOr(pkg, "start", "node index.js"),
+      hasPrisma: hasDep(pkg, "@prisma/client") || hasDep(pkg, "prisma") || fileExists(root, "prisma", "schema.prisma"),
+      hasNextAuth: false
+    };
+  }
+  if (pkg.scripts?.start || pkg.scripts?.build) {
+    return {
+      type: "node",
+      framework: "Node.js",
+      deployMode: "pm2",
+      runtime: "node",
+      buildCommand: pkg.scripts.build,
+      startCommand: scriptOr(pkg, "start", "npm start"),
+      hasPrisma: hasDep(pkg, "@prisma/client") || hasDep(pkg, "prisma") || fileExists(root, "prisma", "schema.prisma"),
+      hasNextAuth: hasDep(pkg, "next-auth")
+    };
+  }
+  return null;
+}
+function detectStaticSite(root) {
+  const hasIndex = fileExists(root, "index.html");
+  const hasPublic = fileExists(root, "public", "index.html");
+  if (!hasIndex && !hasPublic) return null;
+  if (packageJson(root)) return null;
+  return {
+    type: "static",
+    framework: "Static HTML",
+    deployMode: "static",
+    outputDirectory: hasPublic ? "public" : ".",
+    hasPrisma: false,
+    hasNextAuth: false
+  };
+}
+function detectLpadConfig(root) {
+  const config = readJsonFile(path.join(root, "lpad.config.json"));
+  if (!config) return null;
+  if (config.runtime === "binary" || config.deployMode === "script") {
+    return {
+      type: "binary",
+      framework: config.type ?? "Custom script",
+      deployMode: config.deployMode ?? "script",
+      runtime: config.runtime ?? "binary",
+      startCommand: config.deployScript,
+      hasPrisma: false,
+      hasNextAuth: false
+    };
+  }
+  return null;
+}
+var FALLBACK = {
+  type: "unknown",
+  framework: "Unknown",
+  deployMode: "pm2",
+  hasPrisma: false,
+  hasNextAuth: false
+};
+function detectProject(projectRoot) {
+  const root = path.resolve(projectRoot);
+  const fromConfig = detectLpadConfig(root);
+  if (fromConfig) return fromConfig;
+  const pkg = packageJson(root);
+  if (pkg) {
+    const node = detectNode(root, pkg);
+    if (node) return node;
+  }
+  const detectors = [
+    () => detectPython(root),
+    () => detectGo(root),
+    () => detectRust(root),
+    () => detectDocker(root),
+    () => detectStaticSite(root)
+  ];
+  for (const run of detectors) {
+    const result = run();
+    if (result) return result;
+  }
+  return FALLBACK;
+}
+
+// src/lpad-dir.ts
+var LPAD_MANIFEST_VERSION = 1;
+var LPAD_DIR_NAME = ".lpad";
+var MANIFEST_FILE = "manifest.json";
+var README_FILE = "README.md";
+function lpadDirPath(projectRoot) {
+  return path2.join(projectRoot, LPAD_DIR_NAME);
+}
+function manifestPath(projectRoot) {
+  return path2.join(lpadDirPath(projectRoot), MANIFEST_FILE);
+}
+function findProjectRoot(startDir = process.cwd()) {
+  let current = path2.resolve(startDir);
+  const { root } = path2.parse(current);
+  while (true) {
+    const candidate = manifestPath(current);
+    if (fs3.existsSync(candidate)) {
+      return current;
+    }
+    const parent = path2.dirname(current);
+    if (parent === current || current === root) {
+      return null;
+    }
+    current = parent;
+  }
+}
+function readManifest(projectRoot) {
+  const filePath = manifestPath(projectRoot);
+  try {
+    if (!fs3.existsSync(filePath)) return null;
+    return JSON.parse(fs3.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function readManifestFromCwd() {
+  const root = findProjectRoot();
+  return root ? readManifest(root) : null;
+}
+function inferSlugFromCwd(cwd = process.cwd()) {
+  return path2.basename(cwd).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+}
+function defaultAssetsHints(projectSlug) {
+  return [
+    {
+      key: "ASSETS_API_SECRET",
+      description: "Assets API secret (sk_\u2026) \u2014 server-only Bearer token",
+      secret: true,
+      required: true
+    },
+    {
+      key: "ASSETS_BASE_URL",
+      description: "Assets API origin (e.g. https://assets.andgroupco.com)",
+      required: true
+    },
+    {
+      key: "ASSETS_PUBLIC_BASE_URL",
+      description: "Public CDN origin for relative asset paths"
+    },
+    {
+      key: "ASSETS_CLIENT_ID",
+      description: `Assets client_id namespace (default: ${projectSlug})`
+    }
+  ];
+}
+function frameworkEnvHints(detected, productionDomain) {
+  const hints = [];
+  if (detected.hasPrisma) {
+    hints.push({
+      key: "DATABASE_URL",
+      description: "Database connection string (PostgreSQL, MySQL, etc.)",
+      secret: true,
+      required: true
+    });
+  }
+  if (detected.hasNextAuth) {
+    const urlHint = productionDomain ? `https://${productionDomain.replace(/^https?:\/\//, "")}` : "your production URL";
+    hints.push(
+      {
+        key: "NEXTAUTH_URL",
+        description: `Public app URL (e.g. ${urlHint})`,
+        required: true
+      },
+      {
+        key: "NEXTAUTH_SECRET",
+        description: "NextAuth session secret",
+        secret: true,
+        required: true
+      }
+    );
+  }
+  if (detected.type === "python") {
+    hints.push({
+      key: "PORT",
+      description: "HTTP port for the Python process (Launchpad sets this at deploy)"
+    });
+  }
+  if (detected.type === "go" || detected.type === "rust") {
+    hints.push({
+      key: "PORT",
+      description: "HTTP port for the compiled binary"
+    });
+  }
+  return hints;
+}
+function mergeEnvHints(existing, generated) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const hint of generated) {
+    byKey.set(hint.key, hint);
+  }
+  for (const hint of existing ?? []) {
+    byKey.set(hint.key, hint);
+  }
+  return [...byKey.values()];
+}
+function nginxRoutesForProject(detected) {
+  switch (detected.type) {
+    case "nextjs":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: `${detected.framework} app \u2014 reverse-proxied to the Node process`
+          },
+          {
+            path: "/api/*",
+            description: "Application API routes"
+          }
+        ]
+      };
+    case "node":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: `${detected.framework} server \u2014 reverse-proxied on the VPS`
+          },
+          {
+            path: "/api/*",
+            description: "Application API routes"
+          }
+        ]
+      };
+    case "python":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: `${detected.framework} API \u2014 reverse-proxied to the Python process`
+          },
+          {
+            path: "/docs",
+            description: "OpenAPI / Swagger docs (FastAPI)"
+          }
+        ]
+      };
+    case "static":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: "Static files served by nginx"
+          }
+        ]
+      };
+    case "docker":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: "Reverse-proxied to the Docker container"
+          }
+        ]
+      };
+    case "go":
+    case "rust":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: `${detected.framework} binary \u2014 reverse-proxied on the VPS`
+          }
+        ]
+      };
+    case "binary":
+      return {
+        routes: [
+          {
+            path: "/",
+            description: "Custom deploy script \u2014 nginx routing may be skipped (see lpad.config.json)"
+          }
+        ]
+      };
+    default:
+      return {
+        routes: [
+          {
+            path: "/",
+            description: "Reverse-proxied to the application process on the VPS"
+          }
+        ]
+      };
+  }
+}
+function buildManifest(input) {
+  const slug = input.slug.trim();
+  const platformDomain = input.platformDomain ?? `${slug}.lpad.ekddigital.com`;
+  const detected = input.detected ?? (input.projectRoot ? detectProject(input.projectRoot) : detectProject(process.cwd()));
+  const frameworkHints = frameworkEnvHints(detected, input.productionDomain);
+  const assetsHints = input.includeAssets !== false ? defaultAssetsHints(slug) : [];
+  const hints = mergeEnvHints(void 0, [
+    ...input.envHints ?? [],
+    ...assetsHints,
+    ...frameworkHints
+  ]);
+  const manifest = {
+    version: LPAD_MANIFEST_VERSION,
+    project: {
+      slug,
+      type: detected.type,
+      ...input.name ? { name: input.name } : {}
+    },
+    lpad: {
+      apiUrl: input.apiUrl,
+      linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+    },
+    deploy: {
+      target: "vps",
+      framework: detected.framework,
+      deployMode: detected.deployMode,
+      ...detected.runtime ? { runtime: detected.runtime } : {},
+      ...detected.buildCommand !== void 0 ? { buildCommand: detected.buildCommand } : {},
+      ...detected.startCommand ? { startCommand: detected.startCommand } : {},
+      ...detected.outputDirectory ? { outputDirectory: detected.outputDirectory } : {},
+      platformDomain,
+      defaultBranch: input.defaultBranch ?? "main",
+      ...input.productionDomain ? { productionDomain: input.productionDomain } : {}
+    }
+  };
+  if (input.includeAssets !== false) {
+    manifest.assets = {
+      publicBaseUrl: "https://assets.andgroupco.com",
+      apiBaseUrl: "https://assets.andgroupco.com/api/v1",
+      clientId: slug,
+      projectName: slug,
+      cdnPathTemplate: "/assets/{clientId}/{projectName}/{assetType}/{filename}",
+      ...input.assets
+    };
+  }
+  if (hints.length > 0) {
+    manifest.env = { hints };
+  }
+  manifest.nginx = nginxRoutesForProject(detected);
+  return manifest;
+}
+function readmeContent(manifest) {
+  const slug = manifest?.project?.slug ?? "{slug}";
+  const projectType = manifest?.project?.type ?? "unknown";
+  const framework = manifest?.deploy?.framework ?? "application";
+  const platformDomain = manifest?.deploy?.platformDomain ?? `${slug}.lpad.ekddigital.com`;
+  const productionDomain = manifest?.deploy?.productionDomain;
+  const deployMode = manifest?.deploy?.deployMode ?? "pm2";
+  const deploySection = deployMode === "static" ? `This **${framework}** project deploys as **static files** via nginx on the VPS.` : deployMode === "docker" ? `This **${framework}** project deploys via **Docker** on the VPS.` : deployMode === "script" || deployMode === "systemd" ? `This project uses **${deployMode}** deploy mode \u2014 see \`lpad.config.json\` for overrides.` : projectType === "python" || projectType === "go" || projectType === "rust" ? `This **${framework}** project deploys as a **long-running process** on the VPS (nginx reverse proxy).` : `This **${framework}** project deploys to **VPS via Launchpad** (nginx + PM2/Docker), not Vercel.`;
+  const domainLines = [
+    `- Platform URL: \`${platformDomain}\``,
+    ...productionDomain ? [`- Production URL: \`${productionDomain}\``] : []
+  ].join("\n");
+  return `# .lpad \u2014 Launchpad project metadata
+
+This directory is created automatically by \`lpad init\`, \`lpad link\`, \`lpad migrate\`, or the first \`lpad deploy\` when missing.
+**Do not create or edit these files manually** \u2014 re-run the CLI to refresh metadata.
+It is **safe to commit** \u2014 it contains no secrets.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| \`manifest.json\` | Project slug, type, linked Launchpad instance, deploy hints, assets URL templates, env hints |
+| \`README.md\` | This file (generated by the CLI) |
+
+## What belongs here vs elsewhere
+
+| Location | Contents |
+|----------|----------|
+| \`.lpad/manifest.json\` | Non-secret metadata: slug, project type, domains, build hints, env **hints** |
+| \`lpad.config.json\` (repo root) | Deploy overrides: \`deployMode\`, build commands, runtime env defaults |
+| Launchpad dashboard / \`lpad env set\` | Production secrets and environment variables |
+| \`~/.config/lpad/config.json\` | CLI auth token and global defaults |
+
+## Deploy target
+
+${deploySection}
+
+${domainLines}
+
+## Assets CDN (optional)
+
+When integrating [EKD Digital Assets](https://assets.andgroupco.com), use:
+
+- **Persist / store:** \`/api/v1/assets/{id}/download\` (canonical API URL)
+- **Browser preview:** \`/api/v1/assets/{id}/download?preview=true\`
+- **Legacy CDN path:** \`/assets/{clientId}/{projectName}/\u2026/{uuid}.ext\` \u2014 nginx on the Assets VPS may serve files directly; the Assets app also redirects these to the download API.
+
+Set secrets via \`lpad env set\` \u2014 never commit \`sk_\u2026\` keys.
+
+## Commands
+
+\`\`\`bash
+lpad migrate              # refresh .lpad/ from Launchpad API + local detection
+lpad deploy --prod
+lpad env pull --environment production
+lpad domains ${slug}
+\`\`\`
+`;
+}
+function writeLpadDir(projectRoot, manifest, options) {
+  const dir = lpadDirPath(projectRoot);
+  const manifestFile = manifestPath(projectRoot);
+  const readmeFile = path2.join(dir, README_FILE);
+  const manifestExists = fs3.existsSync(manifestFile);
+  if (manifestExists && !options?.force) {
+    const existing = readManifest(projectRoot);
+    const merged = {
+      ...existing,
+      ...manifest,
+      project: { ...existing?.project, ...manifest.project },
+      lpad: {
+        ...existing?.lpad,
+        ...manifest.lpad,
+        linkedAt: manifest.lpad.linkedAt
+      },
+      deploy: {
+        target: "vps",
+        ...existing?.deploy,
+        ...manifest.deploy
+      },
+      assets: { ...existing?.assets, ...manifest.assets },
+      env: {
+        hints: mergeEnvHints(existing?.env?.hints, manifest.env?.hints ?? [])
+      },
+      nginx: manifest.nginx ?? existing?.nginx
+    };
+    fs3.mkdirSync(dir, { recursive: true });
+    fs3.writeFileSync(
+      manifestFile,
+      JSON.stringify(merged, null, 2) + "\n",
+      "utf8"
+    );
+    fs3.writeFileSync(readmeFile, readmeContent(merged), "utf8");
+    return { created: false, updated: true };
+  }
+  fs3.mkdirSync(dir, { recursive: true });
+  fs3.writeFileSync(
+    manifestFile,
+    JSON.stringify(manifest, null, 2) + "\n",
+    "utf8"
+  );
+  fs3.writeFileSync(readmeFile, readmeContent(manifest), "utf8");
+  return { created: !manifestExists, updated: manifestExists };
+}
+function defaultApiUrlForManifest(apiUrl) {
+  return apiUrl ?? process.env.LPAD_API_URL ?? DEFAULT_API_URL;
+}
+
+// src/scaffold.ts
+import fs4 from "node:fs";
+async function fetchProjectMetadata(apiUrl, token, slug) {
+  let projectName;
+  let defaultBranch = "main";
+  let platformDomain = `${slug}.lpad.ekddigital.com`;
+  let productionDomain;
+  let foundOnServer = false;
+  try {
+    const settingsPayload = await requestJson({
+      method: "GET",
+      pathName: `/api/projects/${encodeURIComponent(slug)}/settings`,
+      apiUrl,
+      token
+    });
+    const settings = extractData(settingsPayload);
+    const projectBlock = settings.project ?? settings.settings;
+    projectName = projectBlock?.name ?? settings.name;
+    defaultBranch = projectBlock?.repository?.branch ?? projectBlock?.repository?.default_branch ?? defaultBranch;
+    foundOnServer = true;
+  } catch {
+  }
+  try {
+    const domainsPayload = await requestJson({
+      method: "GET",
+      pathName: `/api/projects/${encodeURIComponent(slug)}/domains`,
+      apiUrl,
+      token
+    });
+    const domainsData = extractData(domainsPayload);
+    const activeDomains = (domainsData.domains ?? []).filter(
+      (d) => d.isActive !== false && d.isVerified !== false
+    );
+    const custom = activeDomains.find(
+      (d) => d.domain && !d.domain.endsWith(".lpad.ekddigital.com")
+    );
+    if (custom?.domain) {
+      productionDomain = custom.domain;
+    }
+    const platform = activeDomains.find(
+      (d) => d.domain?.endsWith(".lpad.ekddigital.com")
+    );
+    if (platform?.domain) {
+      platformDomain = platform.domain;
+    }
+  } catch {
+  }
+  return {
+    projectName,
+    defaultBranch,
+    platformDomain,
+    productionDomain,
+    foundOnServer
+  };
+}
+async function scaffoldLpadDir(options) {
+  const cwd = options.cwd ?? process.cwd();
+  const slug = options.slug.trim();
+  const includeAssets = options.includeAssets !== false;
+  const fetchFromServer = options.fetchFromServer ?? Boolean(options.token?.trim());
+  let projectName;
+  let defaultBranch = "main";
+  let platformDomain = `${slug}.lpad.ekddigital.com`;
+  let productionDomain;
+  if (fetchFromServer && options.token) {
+    const meta = await fetchProjectMetadata(
+      options.apiUrl,
+      options.token,
+      slug
+    );
+    projectName = meta.projectName;
+    defaultBranch = meta.defaultBranch;
+    platformDomain = meta.platformDomain;
+    productionDomain = meta.productionDomain;
+  }
+  const detected = detectProject(cwd);
+  const manifest = buildManifest({
+    slug,
+    name: projectName,
+    apiUrl: options.apiUrl,
+    platformDomain,
+    productionDomain,
+    defaultBranch,
+    includeAssets,
+    detected,
+    projectRoot: cwd
+  });
+  const { created, updated } = writeLpadDir(cwd, manifest, {
+    force: options.force
+  });
+  if (options.updateConfig !== false) {
+    writeConfig({
+      ...options.config,
+      linkedProject: slug,
+      apiUrl: options.apiUrl
+    });
+  }
+  return {
+    created,
+    updated,
+    manifestFile: manifestPath(cwd),
+    slug,
+    platformDomain,
+    productionDomain
+  };
+}
+function lpadDirExists(cwd = process.cwd()) {
+  return fs4.existsSync(manifestPath(cwd));
+}
+
+// src/commands/init.ts
+async function cmdInit(config, projectArg, flags) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  const slug = projectArg ?? (typeof flags.slug === "string" ? flags.slug : void 0) ?? inferSlugFromCwd();
+  if (!slug) {
+    fail(
+      "Usage: lpad init <projectSlug>  (or run from a named project directory)"
+    );
+  }
+  const result = await scaffoldLpadDir({
+    config,
+    slug,
+    apiUrl,
+    token,
+    force: Boolean(flags.force),
+    includeAssets: !flags["no-assets"],
+    fetchFromServer: true
+  });
+  if (result.created) {
+    ok(`Initialized ${result.manifestFile}`);
+  } else if (result.updated) {
+    ok(`Updated ${result.manifestFile}`);
+  } else {
+    ok(`Linked project: ${slug}`);
+  }
+  info(`Platform domain: ${result.platformDomain}`);
+  if (result.productionDomain) info(`Production domain: ${result.productionDomain}`);
+  info("Secrets stay in Launchpad \u2014 use `lpad env set` for production values.");
+}
+
+// src/commands/migrate.ts
+async function cmdMigrate(config, projectArg, flags) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  const slug = projectArg ?? (typeof flags.slug === "string" ? flags.slug : void 0) ?? config.linkedProject ?? inferSlugFromCwd();
+  if (!slug) {
+    fail(
+      "Usage: lpad migrate [projectSlug]  (or run from a linked project directory)"
+    );
+  }
+  const result = await scaffoldLpadDir({
+    config,
+    slug,
+    apiUrl,
+    token,
+    force: Boolean(flags.force),
+    includeAssets: !flags["no-assets"],
+    fetchFromServer: true
+  });
+  if (result.created) {
+    ok(`Created ${result.manifestFile}`);
+  } else if (result.updated) {
+    ok(`Updated ${result.manifestFile}`);
+  } else {
+    ok(`Project metadata already present: ${result.manifestFile}`);
+  }
+  info(`Platform domain: ${result.platformDomain}`);
+  if (result.productionDomain) {
+    info(`Production domain: ${result.productionDomain}`);
+  }
+  info(
+    "Commit `.lpad/` to git \u2014 it contains no secrets. Use `lpad env set` for production values."
+  );
+}
+
 // src/commands/link.ts
-function cmdLink(config, projectSlug) {
+async function cmdLink(config, projectSlug) {
   if (!projectSlug) fail("Usage: lpad link <projectSlug>");
-  writeConfig({ ...config, linkedProject: projectSlug });
+  const apiUrl = defaultApiUrlForManifest(getApiUrl(config));
+  const token = getToken(config);
+  const result = await scaffoldLpadDir({
+    config,
+    slug: projectSlug,
+    apiUrl,
+    token: token || void 0,
+    fetchFromServer: Boolean(token),
+    includeAssets: true
+  });
   ok(`Linked default project: ${projectSlug}`);
+  if (result.created) {
+    ok(`Created ${result.manifestFile}`);
+  } else if (result.updated) {
+    ok(`Updated ${result.manifestFile}`);
+  }
 }
 function cmdUnlink(config) {
   const { linkedProject: _lp, ...rest } = config;
@@ -395,10 +1190,15 @@ function cmdUnlink(config) {
 
 // src/project.ts
 function resolveProject(config, arg) {
-  const slug = arg ?? config.linkedProject;
+  if (arg) return arg;
+  const manifest = readManifestFromCwd();
+  if (manifest?.project?.slug) {
+    return manifest.project.slug;
+  }
+  const slug = config.linkedProject;
   if (!slug) {
     fail(
-      "No project specified. Use `lpad link <projectSlug>` or pass the slug explicitly."
+      "No project specified. Run `lpad init`, `lpad link`, or `lpad migrate`, or pass the slug explicitly."
     );
   }
   return slug;
@@ -410,6 +1210,21 @@ async function cmdDeploy(config, projectArg, flags) {
   const token = getToken(config);
   if (!token) fail("Not logged in. Run `lpad login`.");
   const projectSlug = resolveProject(config, projectArg);
+  if (!lpadDirExists()) {
+    const bootstrapped = await scaffoldLpadDir({
+      config,
+      slug: projectSlug,
+      apiUrl,
+      token,
+      fetchFromServer: true,
+      updateConfig: true
+    });
+    if (bootstrapped.created) {
+      info(`Created ${bootstrapped.manifestFile} (auto-bootstrap on deploy)`);
+    } else if (bootstrapped.updated) {
+      info(`Updated ${bootstrapped.manifestFile} (auto-bootstrap on deploy)`);
+    }
+  }
   const body = {
     branch: String(flags.branch ?? "main"),
     region: String(flags.region ?? "us-east-1"),
@@ -449,8 +1264,8 @@ async function cmdDeploy(config, projectArg, flags) {
 }
 
 // src/commands/env.ts
-import fs2 from "node:fs";
-import path from "node:path";
+import fs5 from "node:fs";
+import path3 from "node:path";
 async function cmdEnvPull(config, projectArg, flags) {
   const apiUrl = getApiUrl(config);
   const token = getToken(config);
@@ -470,8 +1285,8 @@ async function cmdEnvPull(config, projectArg, flags) {
     const env = String(v.environment ?? "").toLowerCase();
     return env === envName || env === "all";
   }).map((v) => `${v.key}=${String(v.value).replace(/\n/g, "\\n")}`);
-  fs2.writeFileSync(
-    path.resolve(output),
+  fs5.writeFileSync(
+    path3.resolve(output),
     lines.join("\n") + (lines.length ? "\n" : ""),
     "utf8"
   );
@@ -888,9 +1703,14 @@ function helpText() {
     "  lpad logout",
     "",
     "Projects:",
+    "  lpad init <projectSlug> [--force] [--no-assets]",
+    "  lpad migrate [projectSlug] [--force] [--no-assets]  Existing projects",
     "  lpad projects list",
-    "  lpad link <projectSlug>",
+    "  lpad link <projectSlug>                       Also creates .lpad/",
     "  lpad unlink",
+    "",
+    "  .lpad/ is created automatically by init, link, migrate, and deploy.",
+    "  No manual mkdir \u2014 commit manifest.json (no secrets).",
     "",
     "Deploy:",
     "  lpad deploy [projectSlug] [--prod] [--branch main] [--region us-east-1]",
@@ -947,8 +1767,12 @@ async function main() {
       case "projects":
         if (args[0] === "list") return void await cmdProjectsList(config);
         break;
+      case "init":
+        return void await cmdInit(config, args[0], flags);
+      case "migrate":
+        return void await cmdMigrate(config, args[0], flags);
       case "link":
-        return void cmdLink(config, args[0]);
+        return void await cmdLink(config, args[0]);
       case "unlink":
         return void cmdUnlink(config);
       case "deploy":
