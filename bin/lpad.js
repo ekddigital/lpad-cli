@@ -2023,6 +2023,101 @@ async function cmdRepoClone(config, arg, dir) {
   });
 }
 
+// src/commands/workflow.ts
+function requireAuth5(config) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  return { apiUrl, token };
+}
+async function cmdWorkflowList(config, projectArg) {
+  const { apiUrl, token } = requireAuth5(config);
+  const projectSlug = resolveProject(config, projectArg);
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/workflows`,
+    apiUrl,
+    token
+  });
+  const workflows = extractData(payload) ?? [];
+  if (!workflows.length) {
+    info("No workflows found. Run `lpad workflow create <name>`.");
+    return;
+  }
+  for (const w of workflows) {
+    console.log(
+      `${w.name}  ${w.triggerEvent}  branch=${w.branch ?? "main"}  runs=${w.runCount}${w.isActive ? "" : "  (disabled)"}`
+    );
+  }
+}
+async function cmdWorkflowCreate(config, name, projectArg, flags) {
+  const { apiUrl, token } = requireAuth5(config);
+  if (!name) fail("Usage: lpad workflow create <name> [projectSlug] [--branch main] [--on manual|push|pull_request]");
+  const projectSlug = resolveProject(config, projectArg);
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/workflows`,
+    apiUrl,
+    token,
+    body: {
+      name,
+      branch: flags.branch ? String(flags.branch) : "main",
+      triggerEvent: flags.on ? String(flags.on).toUpperCase() : "MANUAL"
+    }
+  });
+  const workflow = extractData(payload);
+  ok(`Created workflow ${workflow.name} for ${projectSlug}`);
+}
+async function cmdWorkflowDispatch(config, name, projectArg) {
+  const { apiUrl, token } = requireAuth5(config);
+  if (!name) fail("Usage: lpad workflow dispatch <name> [projectSlug]");
+  const projectSlug = resolveProject(config, projectArg);
+  const workflow = await findWorkflowByName(apiUrl, token, projectSlug, name);
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/workflows/${workflow.id}/dispatch`,
+    apiUrl,
+    token
+  });
+  const result = extractData(payload);
+  ok(`Dispatched ${name} \u2014 run ${result.runId} (${result.status})`);
+  if (result.deploymentId) info(`Deployment: ${result.deploymentId}`);
+}
+async function cmdWorkflowRuns(config, name, projectArg) {
+  const { apiUrl, token } = requireAuth5(config);
+  if (!name) fail("Usage: lpad workflow runs <name> [projectSlug]");
+  const projectSlug = resolveProject(config, projectArg);
+  const workflow = await findWorkflowByName(apiUrl, token, projectSlug, name);
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/workflows/${workflow.id}/runs`,
+    apiUrl,
+    token
+  });
+  const runs = extractData(payload) ?? [];
+  if (!runs.length) {
+    info("No runs yet.");
+    return;
+  }
+  for (const run of runs) {
+    console.log(
+      `${run.startedAt}  ${run.status}  ${run.deploymentId ? `deployment=${run.deploymentId}` : run.errorMessage || ""}`
+    );
+  }
+}
+async function findWorkflowByName(apiUrl, token, projectSlug, name) {
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/workflows`,
+    apiUrl,
+    token
+  });
+  const workflows = extractData(payload) ?? [];
+  const workflow = workflows.find((w) => w.name === name);
+  if (!workflow) fail(`Workflow "${name}" not found in ${projectSlug}`);
+  return workflow;
+}
+
 // src/index.ts
 function helpText() {
   return [
@@ -2089,6 +2184,12 @@ function helpText() {
     "  lpad repo create <orgSlug>/<name> [--description <text>] [--public] [--branch main]",
     "  lpad repo list <orgSlug>",
     "  lpad repo clone <orgSlug>/<repoSlug> [dir]",
+    "",
+    "Workflows (thin wrapper around deploy):",
+    "  lpad workflow list [projectSlug]",
+    "  lpad workflow create <name> [projectSlug] [--branch main] [--on manual|push|pull_request]",
+    "  lpad workflow dispatch <name> [projectSlug]",
+    "  lpad workflow runs <name> [projectSlug]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -2230,6 +2331,15 @@ async function main() {
           return void await cmdRepoCreate(config, args[1], flags);
         if (args[0] === "clone")
           return void await cmdRepoClone(config, args[1], args[2]);
+        break;
+      case "workflow":
+        if (args[0] === "list") return void await cmdWorkflowList(config, args[1]);
+        if (args[0] === "create")
+          return void await cmdWorkflowCreate(config, args[1], args[2], flags);
+        if (args[0] === "dispatch")
+          return void await cmdWorkflowDispatch(config, args[1], args[2]);
+        if (args[0] === "runs")
+          return void await cmdWorkflowRuns(config, args[1], args[2]);
         break;
       case "config":
         return void cmdConfig(config, args);

@@ -333,6 +333,35 @@ lpad pr list --state open
 
 ---
 
+## Workflows
+
+A thin wrapper around the existing deploy pipeline — a workflow is "on this
+trigger, deploy this project". Dispatching one calls the same deploy path as
+`lpad deploy`, but records a `WorkflowRun` for traceability.
+
+### `lpad workflow create <name> [projectSlug]`
+
+```bash
+lpad workflow create ci --branch main --on manual
+```
+
+| Flag      | Description                                          |
+| --------- | ----------------------------------------------------- |
+| `--branch`| Branch to deploy when dispatched (default `main`)     |
+| `--on`    | `manual`, `push`, or `pull_request` (default `manual`) |
+
+### `lpad workflow list [projectSlug]`
+
+### `lpad workflow dispatch <name> [projectSlug]`
+
+Triggers a run — equivalent to `lpad run <workflow>` / `workflow_dispatch` in hub.md's vision.
+
+### `lpad workflow runs <name> [projectSlug]`
+
+List recent runs and their outcome.
+
+---
+
 ## Environment Variables
 
 ### `lpad env list [projectSlug]`

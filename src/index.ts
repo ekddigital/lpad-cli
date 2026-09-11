@@ -41,6 +41,12 @@ import {
   cmdPullRequestsList,
 } from "./commands/collaboration";
 import { cmdRepoList, cmdRepoCreate, cmdRepoClone } from "./commands/repo";
+import {
+  cmdWorkflowList,
+  cmdWorkflowCreate,
+  cmdWorkflowDispatch,
+  cmdWorkflowRuns,
+} from "./commands/workflow";
 
 function helpText(): string {
   return [
@@ -107,6 +113,12 @@ function helpText(): string {
     "  lpad repo create <orgSlug>/<name> [--description <text>] [--public] [--branch main]",
     "  lpad repo list <orgSlug>",
     "  lpad repo clone <orgSlug>/<repoSlug> [dir]",
+    "",
+    "Workflows (thin wrapper around deploy):",
+    "  lpad workflow list [projectSlug]",
+    "  lpad workflow create <name> [projectSlug] [--branch main] [--on manual|push|pull_request]",
+    "  lpad workflow dispatch <name> [projectSlug]",
+    "  lpad workflow runs <name> [projectSlug]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -276,6 +288,16 @@ async function main(): Promise<void> {
           return void (await cmdRepoCreate(config, args[1], flags));
         if (args[0] === "clone")
           return void (await cmdRepoClone(config, args[1], args[2]));
+        break;
+
+      case "workflow":
+        if (args[0] === "list") return void (await cmdWorkflowList(config, args[1]));
+        if (args[0] === "create")
+          return void (await cmdWorkflowCreate(config, args[1], args[2], flags));
+        if (args[0] === "dispatch")
+          return void (await cmdWorkflowDispatch(config, args[1], args[2]));
+        if (args[0] === "runs")
+          return void (await cmdWorkflowRuns(config, args[1], args[2]));
         break;
 
       case "config":
