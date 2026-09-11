@@ -40,6 +40,7 @@ import {
   cmdIssuesSync,
   cmdPullRequestsList,
 } from "./commands/collaboration";
+import { cmdRepoList, cmdRepoCreate, cmdRepoClone } from "./commands/repo";
 
 function helpText(): string {
   return [
@@ -101,6 +102,11 @@ function helpText(): string {
     "  lpad issues sync [projectSlug]",
     "  lpad pr list [projectSlug] [--state open|closed|all]",
     "  lpad pr sync [projectSlug]",
+    "",
+    "Self-hosted repos (new repos only — existing repos stay on GitHub):",
+    "  lpad repo create <orgSlug>/<name> [--description <text>] [--public] [--branch main]",
+    "  lpad repo list <orgSlug>",
+    "  lpad repo clone <orgSlug>/<repoSlug> [dir]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -263,6 +269,14 @@ async function main(): Promise<void> {
             flags,
           )
         );
+
+      case "repo":
+        if (args[0] === "list") return void (await cmdRepoList(config, args[1]));
+        if (args[0] === "create")
+          return void (await cmdRepoCreate(config, args[1], flags));
+        if (args[0] === "clone")
+          return void (await cmdRepoClone(config, args[1], args[2]));
+        break;
 
       case "config":
         return void cmdConfig(config, args);

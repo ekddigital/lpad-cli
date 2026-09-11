@@ -1955,6 +1955,74 @@ async function cmdPullRequestsList(config, projectArg, flags) {
   }
 }
 
+// src/commands/repo.ts
+import { spawn as spawn2 } from "node:child_process";
+function requireAuth4(config) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  return { apiUrl, token };
+}
+function splitOrgRepo(arg, usage) {
+  if (!arg) fail(usage);
+  const [org, repo] = arg.split("/");
+  if (!org) fail(usage);
+  return [org, repo];
+}
+async function cmdRepoList(config, orgSlug) {
+  const { apiUrl, token } = requireAuth4(config);
+  if (!orgSlug) fail("Usage: lpad repo list <orgSlug>");
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/repos`,
+    apiUrl,
+    token
+  });
+  const repos = extractData(payload) ?? [];
+  if (!repos.length) {
+    info("No repositories found. Run `lpad repo create <orgSlug>/<name>`.");
+    return;
+  }
+  for (const repo of repos) {
+    console.log(`${repo.slug}  ${repo.isPrivate ? "private" : "public"}  ${repo.cloneUrl}`);
+  }
+}
+async function cmdRepoCreate(config, arg, flags) {
+  const { apiUrl, token } = requireAuth4(config);
+  const [orgSlug, repoName] = splitOrgRepo(
+    arg,
+    "Usage: lpad repo create <orgSlug>/<name> [--description <text>] [--public] [--branch main]"
+  );
+  if (!repoName) fail("Usage: lpad repo create <orgSlug>/<name>");
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/repos`,
+    apiUrl,
+    token,
+    body: {
+      name: repoName,
+      description: flags.description ? String(flags.description) : void 0,
+      isPrivate: !flags.public,
+      defaultBranch: flags.branch ? String(flags.branch) : "main"
+    }
+  });
+  const repo = extractData(payload);
+  ok(`Created ${orgSlug}/${repo.slug}`);
+  console.log(repo.cloneUrl);
+}
+async function cmdRepoClone(config, arg, dir) {
+  const { apiUrl } = requireAuth4(config);
+  const [orgSlug, repoSlug] = splitOrgRepo(arg, "Usage: lpad repo clone <orgSlug>/<repoSlug> [dir]");
+  if (!repoSlug) fail("Usage: lpad repo clone <orgSlug>/<repoSlug> [dir]");
+  const cloneUrl = `${apiUrl.replace(/\/$/, "")}/git/${orgSlug}/${repoSlug}.git`;
+  const args = dir ? [cloneUrl, dir] : [cloneUrl];
+  await new Promise((resolve, reject) => {
+    const child = spawn2("git", ["clone", ...args], { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`git clone exited ${code}`)));
+  });
+}
+
 // src/index.ts
 function helpText() {
   return [
@@ -2016,6 +2084,11 @@ function helpText() {
     "  lpad issues sync [projectSlug]",
     "  lpad pr list [projectSlug] [--state open|closed|all]",
     "  lpad pr sync [projectSlug]",
+    "",
+    "Self-hosted repos (new repos only \u2014 existing repos stay on GitHub):",
+    "  lpad repo create <orgSlug>/<name> [--description <text>] [--public] [--branch main]",
+    "  lpad repo list <orgSlug>",
+    "  lpad repo clone <orgSlug>/<repoSlug> [dir]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -2151,6 +2224,13 @@ async function main() {
           args[0] === "list" ? args[1] : args[0],
           flags
         );
+      case "repo":
+        if (args[0] === "list") return void await cmdRepoList(config, args[1]);
+        if (args[0] === "create")
+          return void await cmdRepoCreate(config, args[1], flags);
+        if (args[0] === "clone")
+          return void await cmdRepoClone(config, args[1], args[2]);
+        break;
       case "config":
         return void cmdConfig(config, args);
       case "update":
