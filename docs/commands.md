@@ -302,6 +302,37 @@ lpad team members add acme platform usr_123 --role MAINTAINER
 
 ---
 
+## Issues & Pull Requests
+
+Read-only mirror of a project's linked GitHub repository — GitHub remains the
+source of truth. Requires the project to have a linked GitHub repository.
+
+### `lpad issues sync [projectSlug]`
+
+Fetch the latest issues and pull requests from GitHub into Launchpad.
+
+### `lpad issues list [projectSlug]`
+
+```bash
+lpad issues list --state open
+```
+
+| Flag      | Description                              |
+| --------- | ----------------------------------------- |
+| `--state` | `open`, `closed`, or `all` (default `all`) |
+
+### `lpad pr sync [projectSlug]`
+
+Alias of `lpad issues sync` (one sync call refreshes both issues and PRs).
+
+### `lpad pr list [projectSlug]`
+
+```bash
+lpad pr list --state open
+```
+
+---
+
 ## Environment Variables
 
 ### `lpad env list [projectSlug]`

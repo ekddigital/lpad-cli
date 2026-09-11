@@ -1884,6 +1884,77 @@ async function cmdTeamMembersRemove(config, orgSlug, teamSlug, userId) {
   ok(`Removed ${userId} from team ${teamSlug}`);
 }
 
+// src/commands/collaboration.ts
+function requireAuth3(config) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  return { apiUrl, token };
+}
+async function cmdIssuesList(config, projectArg, flags) {
+  const { apiUrl, token } = requireAuth3(config);
+  const projectSlug = resolveProject(config, projectArg);
+  const state = flags.state ? `?state=${encodeURIComponent(String(flags.state))}` : "";
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/issues${state}`,
+    apiUrl,
+    token
+  });
+  const data = extractData(payload);
+  if (data.synced === false) {
+    info("Project has no linked GitHub repository.");
+    return;
+  }
+  const issues = data.issues ?? [];
+  if (!issues.length) {
+    info("No issues found. Run `lpad issues sync` to pull from GitHub.");
+    return;
+  }
+  for (const issue of issues) {
+    console.log(`#${issue.number}  [${issue.state}]  ${issue.title}`);
+  }
+}
+async function cmdIssuesSync(config, projectArg) {
+  const { apiUrl, token } = requireAuth3(config);
+  const projectSlug = resolveProject(config, projectArg);
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/collaboration-sync`,
+    apiUrl,
+    token
+  });
+  const data = extractData(payload);
+  info(`Synced ${data.issuesSynced} issues, ${data.pullRequestsSynced} pull requests.`);
+}
+async function cmdPullRequestsList(config, projectArg, flags) {
+  const { apiUrl, token } = requireAuth3(config);
+  const projectSlug = resolveProject(config, projectArg);
+  const state = flags.state ? `?state=${encodeURIComponent(String(flags.state))}` : "";
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/projects/${encodeURIComponent(projectSlug)}/pull-requests${state}`,
+    apiUrl,
+    token
+  });
+  const data = extractData(payload);
+  if (data.synced === false) {
+    info("Project has no linked GitHub repository.");
+    return;
+  }
+  const prs = data.pullRequests ?? [];
+  if (!prs.length) {
+    info("No pull requests found. Run `lpad pr sync` to pull from GitHub.");
+    return;
+  }
+  for (const pr of prs) {
+    const status = pr.isMerged ? "merged" : pr.state;
+    console.log(
+      `#${pr.number}  [${status}]  ${pr.title}  (${pr.headBranch} -> ${pr.baseBranch})`
+    );
+  }
+}
+
 // src/index.ts
 function helpText() {
   return [
@@ -1939,6 +2010,12 @@ function helpText() {
     "  lpad team delete <orgSlug> <teamSlug>",
     "  lpad team members add <orgSlug> <teamSlug> <userId> [--role MEMBER]",
     "  lpad team members remove <orgSlug> <teamSlug> <userId>",
+    "",
+    "Issues & Pull Requests (synced from GitHub):",
+    "  lpad issues list [projectSlug] [--state open|closed|all]",
+    "  lpad issues sync [projectSlug]",
+    "  lpad pr list [projectSlug] [--state open|closed|all]",
+    "  lpad pr sync [projectSlug]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -2022,26 +2099,58 @@ async function main() {
           if (args[1] === "list")
             return void await cmdOrgMembersList(config, args[2]);
           if (args[1] === "add")
-            return void await cmdOrgMembersAdd(config, args[2], args[3], flags);
+            return void await cmdOrgMembersAdd(
+              config,
+              args[2],
+              args[3],
+              flags
+            );
           if (args[1] === "role")
-            return void await cmdOrgMembersRole(config, args[2], args[3], args[4]);
+            return void await cmdOrgMembersRole(
+              config,
+              args[2],
+              args[3],
+              args[4]
+            );
           if (args[1] === "remove")
             return void await cmdOrgMembersRemove(config, args[2], args[3]);
         }
         break;
       case "team":
-        if (args[0] === "list") return void await cmdTeamList(config, args[1]);
+        if (args[0] === "list")
+          return void await cmdTeamList(config, args[1]);
         if (args[0] === "create")
           return void await cmdTeamCreate(config, args[1], args[2], flags);
         if (args[0] === "delete")
           return void await cmdTeamDelete(config, args[1], args[2]);
         if (args[0] === "members") {
           if (args[1] === "add")
-            return void await cmdTeamMembersAdd(config, args[2], args[3], args[4], flags);
+            return void await cmdTeamMembersAdd(
+              config,
+              args[2],
+              args[3],
+              args[4],
+              flags
+            );
           if (args[1] === "remove")
-            return void await cmdTeamMembersRemove(config, args[2], args[3], args[4]);
+            return void await cmdTeamMembersRemove(
+              config,
+              args[2],
+              args[3],
+              args[4]
+            );
         }
         break;
+      case "issues":
+        if (args[0] === "sync") return void await cmdIssuesSync(config, args[1]);
+        return void await cmdIssuesList(config, args[0] === "list" ? args[1] : args[0], flags);
+      case "pr":
+        if (args[0] === "sync") return void await cmdIssuesSync(config, args[1]);
+        return void await cmdPullRequestsList(
+          config,
+          args[0] === "list" ? args[1] : args[0],
+          flags
+        );
       case "config":
         return void cmdConfig(config, args);
       case "update":

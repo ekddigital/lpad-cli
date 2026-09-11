@@ -35,6 +35,11 @@ import {
   cmdTeamMembersAdd,
   cmdTeamMembersRemove,
 } from "./commands/team";
+import {
+  cmdIssuesList,
+  cmdIssuesSync,
+  cmdPullRequestsList,
+} from "./commands/collaboration";
 
 function helpText(): string {
   return [
@@ -90,6 +95,12 @@ function helpText(): string {
     "  lpad team delete <orgSlug> <teamSlug>",
     "  lpad team members add <orgSlug> <teamSlug> <userId> [--role MEMBER]",
     "  lpad team members remove <orgSlug> <teamSlug> <userId>",
+    "",
+    "Issues & Pull Requests (synced from GitHub):",
+    "  lpad issues list [projectSlug] [--state open|closed|all]",
+    "  lpad issues sync [projectSlug]",
+    "  lpad pr list [projectSlug] [--state open|closed|all]",
+    "  lpad pr sync [projectSlug]",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -236,6 +247,22 @@ async function main(): Promise<void> {
             ));
         }
         break;
+
+      case "issues":
+        if (args[0] === "sync") return void (await cmdIssuesSync(config, args[1]));
+        return void (
+          await cmdIssuesList(config, args[0] === "list" ? args[1] : args[0], flags)
+        );
+
+      case "pr":
+        if (args[0] === "sync") return void (await cmdIssuesSync(config, args[1]));
+        return void (
+          await cmdPullRequestsList(
+            config,
+            args[0] === "list" ? args[1] : args[0],
+            flags,
+          )
+        );
 
       case "config":
         return void cmdConfig(config, args);
