@@ -98,6 +98,16 @@ lpad team create acme "Platform Engineering" --slug platform
 
 See [docs/commands.md](docs/commands.md#organizations) for the full reference.
 
+### Self-hosted repos, issues/PRs, and workflows
+
+```bash
+lpad repo create acme/my-app && lpad repo clone acme/my-app
+lpad issues sync && lpad issues list --state open
+lpad workflow create ci --branch main && lpad workflow dispatch ci
+```
+
+See [docs/commands.md](docs/commands.md) for the full reference on each.
+
 ---
 
 ## Requirements
