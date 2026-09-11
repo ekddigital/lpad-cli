@@ -88,6 +88,16 @@ lpad logs --follow
 lpad env pull --environment production --output .env.production
 ```
 
+### Organizations & teams
+
+```bash
+lpad org create "Acme Inc." --slug acme
+lpad org members add acme teammate@example.com --role DEVELOPER
+lpad team create acme "Platform Engineering" --slug platform
+```
+
+See [docs/commands.md](docs/commands.md#organizations) for the full reference.
+
 ---
 
 ## Requirements

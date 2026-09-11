@@ -14,8 +14,27 @@ import { cmdEnvPull, cmdEnvSet, cmdEnvList } from "./commands/env";
 import { cmdConfig } from "./commands/config-cmd";
 import { cmdUpdate } from "./commands/update";
 import { cmdLogs } from "./commands/logs";
-import { cmdDeploymentsList, cmdDeploymentsInspect } from "./commands/deployments";
+import {
+  cmdDeploymentsList,
+  cmdDeploymentsInspect,
+} from "./commands/deployments";
 import { cmdDomainsList } from "./commands/domains";
+import {
+  cmdOrgList,
+  cmdOrgCreate,
+  cmdOrgShow,
+  cmdOrgMembersList,
+  cmdOrgMembersAdd,
+  cmdOrgMembersRole,
+  cmdOrgMembersRemove,
+} from "./commands/org";
+import {
+  cmdTeamList,
+  cmdTeamCreate,
+  cmdTeamDelete,
+  cmdTeamMembersAdd,
+  cmdTeamMembersRemove,
+} from "./commands/team";
 
 function helpText(): string {
   return [
@@ -55,6 +74,22 @@ function helpText(): string {
     "",
     "Domains:",
     "  lpad domains [projectSlug]",
+    "",
+    "Organizations:",
+    "  lpad org list",
+    "  lpad org create <name> [--slug <slug>] [--description <text>]",
+    "  lpad org show <orgSlug>",
+    "  lpad org members list <orgSlug>",
+    "  lpad org members add <orgSlug> <email> [--role VIEWER]",
+    "  lpad org members role <orgSlug> <userId> <role>",
+    "  lpad org members remove <orgSlug> <userId>",
+    "",
+    "Teams:",
+    "  lpad team list <orgSlug>",
+    "  lpad team create <orgSlug> <name> [--slug <slug>] [--description <text>]",
+    "  lpad team delete <orgSlug> <teamSlug>",
+    "  lpad team members add <orgSlug> <teamSlug> <userId> [--role MEMBER]",
+    "  lpad team members remove <orgSlug> <teamSlug> <userId>",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -140,16 +175,67 @@ async function main(): Promise<void> {
         if (args[0] === "inspect")
           return void (await cmdDeploymentsInspect(config, args[1], args[2]));
         // default sub-command is "list"
-        return void (
-          await cmdDeploymentsList(
-            config,
-            args[0] === "list" ? args[1] : args[0],
-            flags,
-          )
-        );
+        return void (await cmdDeploymentsList(
+          config,
+          args[0] === "list" ? args[1] : args[0],
+          flags,
+        ));
 
       case "domains":
         return void (await cmdDomainsList(config, args[0]));
+
+      case "org":
+        if (args[0] === "list") return void (await cmdOrgList(config));
+        if (args[0] === "create")
+          return void (await cmdOrgCreate(config, args[1], flags));
+        if (args[0] === "show") return void (await cmdOrgShow(config, args[1]));
+        if (args[0] === "members") {
+          if (args[1] === "list")
+            return void (await cmdOrgMembersList(config, args[2]));
+          if (args[1] === "add")
+            return void (await cmdOrgMembersAdd(
+              config,
+              args[2],
+              args[3],
+              flags,
+            ));
+          if (args[1] === "role")
+            return void (await cmdOrgMembersRole(
+              config,
+              args[2],
+              args[3],
+              args[4],
+            ));
+          if (args[1] === "remove")
+            return void (await cmdOrgMembersRemove(config, args[2], args[3]));
+        }
+        break;
+
+      case "team":
+        if (args[0] === "list")
+          return void (await cmdTeamList(config, args[1]));
+        if (args[0] === "create")
+          return void (await cmdTeamCreate(config, args[1], args[2], flags));
+        if (args[0] === "delete")
+          return void (await cmdTeamDelete(config, args[1], args[2]));
+        if (args[0] === "members") {
+          if (args[1] === "add")
+            return void (await cmdTeamMembersAdd(
+              config,
+              args[2],
+              args[3],
+              args[4],
+              flags,
+            ));
+          if (args[1] === "remove")
+            return void (await cmdTeamMembersRemove(
+              config,
+              args[2],
+              args[3],
+              args[4],
+            ));
+        }
+        break;
 
       case "config":
         return void cmdConfig(config, args);

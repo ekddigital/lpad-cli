@@ -1687,6 +1687,203 @@ async function cmdDomainsList(config, projectArg) {
   console.log();
 }
 
+// src/commands/org.ts
+function requireAuth(config) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  return { apiUrl, token };
+}
+async function cmdOrgList(config) {
+  const { apiUrl, token } = requireAuth(config);
+  const payload = await requestJson({
+    method: "GET",
+    pathName: "/api/organizations",
+    apiUrl,
+    token
+  });
+  const orgs = extractData(payload) ?? [];
+  if (!orgs.length) {
+    info("No organizations found.");
+    return;
+  }
+  for (const org of orgs) {
+    const role = org.role ? ` (${org.role})` : "";
+    console.log(
+      `${org.slug}  ${org.name}${role}  members=${org.stats.members} teams=${org.stats.teams} projects=${org.stats.projects}`
+    );
+  }
+}
+async function cmdOrgCreate(config, name, flags) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!name) fail("Usage: lpad org create <name> [--slug <slug>] [--description <text>]");
+  const payload = await requestJson({
+    method: "POST",
+    pathName: "/api/organizations",
+    apiUrl,
+    token,
+    body: {
+      name,
+      slug: flags.slug ? String(flags.slug) : void 0,
+      description: flags.description ? String(flags.description) : void 0
+    }
+  });
+  const org = extractData(payload);
+  ok(`Created organization ${org.slug} (${org.name})`);
+}
+async function cmdOrgShow(config, slug) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!slug) fail("Usage: lpad org show <orgSlug>");
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/organizations/${encodeURIComponent(slug)}`,
+    apiUrl,
+    token
+  });
+  const org = extractData(payload);
+  console.log(`${org.name}  (@${org.slug})`);
+  if (org.description) console.log(org.description);
+  console.log(
+    `role=${org.role}  members=${org.stats.members}  teams=${org.stats.teams}  projects=${org.stats.projects}`
+  );
+}
+async function cmdOrgMembersList(config, slug) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!slug) fail("Usage: lpad org members list <orgSlug>");
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/organizations/${encodeURIComponent(slug)}/members`,
+    apiUrl,
+    token
+  });
+  const members = extractData(payload) ?? [];
+  if (!members.length) {
+    info("No members found.");
+    return;
+  }
+  for (const m of members) {
+    console.log(`${m.email}  ${m.role}  ${m.name ?? ""}`.trimEnd());
+  }
+}
+async function cmdOrgMembersAdd(config, slug, email, flags) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!slug || !email)
+    fail("Usage: lpad org members add <orgSlug> <email> [--role VIEWER]");
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/organizations/${encodeURIComponent(slug)}/members`,
+    apiUrl,
+    token,
+    body: { email, role: String(flags.role ?? "VIEWER").toUpperCase() }
+  });
+  const member = extractData(payload);
+  ok(`Added ${member.email} as ${member.role} to ${slug}`);
+}
+async function cmdOrgMembersRole(config, slug, userId, role) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!slug || !userId || !role)
+    fail("Usage: lpad org members role <orgSlug> <userId> <role>");
+  await requestJson({
+    method: "PATCH",
+    pathName: `/api/organizations/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,
+    apiUrl,
+    token,
+    body: { role: String(role).toUpperCase() }
+  });
+  ok(`Updated role for ${userId} to ${String(role).toUpperCase()}`);
+}
+async function cmdOrgMembersRemove(config, slug, userId) {
+  const { apiUrl, token } = requireAuth(config);
+  if (!slug || !userId) fail("Usage: lpad org members remove <orgSlug> <userId>");
+  await requestJson({
+    method: "DELETE",
+    pathName: `/api/organizations/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,
+    apiUrl,
+    token
+  });
+  ok(`Removed ${userId} from ${slug}`);
+}
+
+// src/commands/team.ts
+function requireAuth2(config) {
+  const apiUrl = getApiUrl(config);
+  const token = getToken(config);
+  if (!token) fail("Not logged in. Run `lpad login`.");
+  return { apiUrl, token };
+}
+async function cmdTeamList(config, orgSlug) {
+  const { apiUrl, token } = requireAuth2(config);
+  if (!orgSlug) fail("Usage: lpad team list <orgSlug>");
+  const payload = await requestJson({
+    method: "GET",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/teams`,
+    apiUrl,
+    token
+  });
+  const teams = extractData(payload) ?? [];
+  if (!teams.length) {
+    info("No teams found.");
+    return;
+  }
+  for (const t of teams) {
+    console.log(`${t.slug}  ${t.name}  members=${t.memberCount}`);
+  }
+}
+async function cmdTeamCreate(config, orgSlug, name, flags) {
+  const { apiUrl, token } = requireAuth2(config);
+  if (!orgSlug || !name)
+    fail("Usage: lpad team create <orgSlug> <name> [--slug <slug>] [--description <text>]");
+  const payload = await requestJson({
+    method: "POST",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/teams`,
+    apiUrl,
+    token,
+    body: {
+      name,
+      slug: flags.slug ? String(flags.slug) : void 0,
+      description: flags.description ? String(flags.description) : void 0
+    }
+  });
+  const team = extractData(payload);
+  ok(`Created team ${team.slug} (${team.name}) in ${orgSlug}`);
+}
+async function cmdTeamDelete(config, orgSlug, teamSlug) {
+  const { apiUrl, token } = requireAuth2(config);
+  if (!orgSlug || !teamSlug) fail("Usage: lpad team delete <orgSlug> <teamSlug>");
+  await requestJson({
+    method: "DELETE",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/teams/${encodeURIComponent(teamSlug)}`,
+    apiUrl,
+    token
+  });
+  ok(`Deleted team ${teamSlug} from ${orgSlug}`);
+}
+async function cmdTeamMembersAdd(config, orgSlug, teamSlug, userId, flags) {
+  const { apiUrl, token } = requireAuth2(config);
+  if (!orgSlug || !teamSlug || !userId)
+    fail("Usage: lpad team members add <orgSlug> <teamSlug> <userId> [--role MEMBER]");
+  await requestJson({
+    method: "POST",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/teams/${encodeURIComponent(teamSlug)}/members`,
+    apiUrl,
+    token,
+    body: { userId, role: String(flags.role ?? "MEMBER").toUpperCase() }
+  });
+  ok(`Added ${userId} to team ${teamSlug}`);
+}
+async function cmdTeamMembersRemove(config, orgSlug, teamSlug, userId) {
+  const { apiUrl, token } = requireAuth2(config);
+  if (!orgSlug || !teamSlug || !userId)
+    fail("Usage: lpad team members remove <orgSlug> <teamSlug> <userId>");
+  await requestJson({
+    method: "DELETE",
+    pathName: `/api/organizations/${encodeURIComponent(orgSlug)}/teams/${encodeURIComponent(teamSlug)}/members/${encodeURIComponent(userId)}`,
+    apiUrl,
+    token
+  });
+  ok(`Removed ${userId} from team ${teamSlug}`);
+}
+
 // src/index.ts
 function helpText() {
   return [
@@ -1726,6 +1923,22 @@ function helpText() {
     "",
     "Domains:",
     "  lpad domains [projectSlug]",
+    "",
+    "Organizations:",
+    "  lpad org list",
+    "  lpad org create <name> [--slug <slug>] [--description <text>]",
+    "  lpad org show <orgSlug>",
+    "  lpad org members list <orgSlug>",
+    "  lpad org members add <orgSlug> <email> [--role VIEWER]",
+    "  lpad org members role <orgSlug> <userId> <role>",
+    "  lpad org members remove <orgSlug> <userId>",
+    "",
+    "Teams:",
+    "  lpad team list <orgSlug>",
+    "  lpad team create <orgSlug> <name> [--slug <slug>] [--description <text>]",
+    "  lpad team delete <orgSlug> <teamSlug>",
+    "  lpad team members add <orgSlug> <teamSlug> <userId> [--role MEMBER]",
+    "  lpad team members remove <orgSlug> <teamSlug> <userId>",
     "",
     "Environment:",
     "  lpad env list [projectSlug] [--environment production]",
@@ -1800,6 +2013,35 @@ async function main() {
         );
       case "domains":
         return void await cmdDomainsList(config, args[0]);
+      case "org":
+        if (args[0] === "list") return void await cmdOrgList(config);
+        if (args[0] === "create")
+          return void await cmdOrgCreate(config, args[1], flags);
+        if (args[0] === "show") return void await cmdOrgShow(config, args[1]);
+        if (args[0] === "members") {
+          if (args[1] === "list")
+            return void await cmdOrgMembersList(config, args[2]);
+          if (args[1] === "add")
+            return void await cmdOrgMembersAdd(config, args[2], args[3], flags);
+          if (args[1] === "role")
+            return void await cmdOrgMembersRole(config, args[2], args[3], args[4]);
+          if (args[1] === "remove")
+            return void await cmdOrgMembersRemove(config, args[2], args[3]);
+        }
+        break;
+      case "team":
+        if (args[0] === "list") return void await cmdTeamList(config, args[1]);
+        if (args[0] === "create")
+          return void await cmdTeamCreate(config, args[1], args[2], flags);
+        if (args[0] === "delete")
+          return void await cmdTeamDelete(config, args[1], args[2]);
+        if (args[0] === "members") {
+          if (args[1] === "add")
+            return void await cmdTeamMembersAdd(config, args[2], args[3], args[4], flags);
+          if (args[1] === "remove")
+            return void await cmdTeamMembersRemove(config, args[2], args[3], args[4]);
+        }
+        break;
       case "config":
         return void cmdConfig(config, args);
       case "update":

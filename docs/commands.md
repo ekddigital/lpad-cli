@@ -226,6 +226,82 @@ lpad domains my-project-slug
 
 ---
 
+## Organizations
+
+Organizations group projects, teams, and members under a shared role hierarchy
+(`OWNER` > `ADMIN` > `MAINTAINER` > `DEVELOPER` > `BILLING`/`AUDITOR` > `VIEWER`).
+
+### `lpad org list`
+
+List organizations you belong to.
+
+```bash
+lpad org list
+```
+
+### `lpad org create <name>`
+
+```bash
+lpad org create "Acme Inc." --slug acme --description "Acme's projects"
+```
+
+| Flag            | Description                               |
+| --------------- | ------------------------------------------ |
+| `--slug`        | Explicit slug (auto-generated if omitted) |
+| `--description` | Optional description                      |
+
+### `lpad org show <orgSlug>`
+
+Print organization details and stats.
+
+### `lpad org members list <orgSlug>`
+
+List members and their roles.
+
+### `lpad org members add <orgSlug> <email>`
+
+Add an existing Launchpad user to the organization.
+
+```bash
+lpad org members add acme teammate@example.com --role DEVELOPER
+```
+
+### `lpad org members role <orgSlug> <userId> <role>`
+
+Change a member's role. Cannot be used to change the owner's role.
+
+### `lpad org members remove <orgSlug> <userId>`
+
+Remove a member. Cannot be used to remove the owner.
+
+---
+
+## Teams
+
+Teams live inside an organization.
+
+### `lpad team list <orgSlug>`
+
+### `lpad team create <orgSlug> <name>`
+
+```bash
+lpad team create acme "Platform Engineering" --slug platform
+```
+
+### `lpad team delete <orgSlug> <teamSlug>`
+
+### `lpad team members add <orgSlug> <teamSlug> <userId>`
+
+The user must already be a member of the organization.
+
+```bash
+lpad team members add acme platform usr_123 --role MAINTAINER
+```
+
+### `lpad team members remove <orgSlug> <teamSlug> <userId>`
+
+---
+
 ## Environment Variables
 
 ### `lpad env list [projectSlug]`
